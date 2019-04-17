@@ -1,7 +1,25 @@
-import sys
+'''
+   manul - main module
+   -------------------------------------
+   Written and maintained by Maksim Shudrak <mshudrak@salesforce.com> <mxmssh@gmail.com>
+
+   Copyright 2019 Salesforce.com, inc. All rights reserved.
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at:
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+'''
+
+
 from os import listdir
 from os.path import isfile, join
-import time
 import subprocess
 import shutil
 from ctypes import *
@@ -17,17 +35,6 @@ import manul_network
 import random
 
 PY3 = sys.version_info[0] == 3
-
-#TODO: AFL fuzzing strategy
-#TODO: timeout is not the best choice for killing process (consider kill)
-#TODO: support afl forkserver
-#TODO: Support Windows (Pin/DynamoRIO with option to select range of addresses/modules to cover)
-#TODO: Support network-based apps fuzzing
-#TODO: Get approval to release
-#TODO: Cool graphs (crashes found per time, coverage found per time and etc.)
-#TODO: Hybrid-mode (some threads running in dumb-mode + some threads running in coverage-guided and share knowledge)
-#TODO: stats for each file executed (exec per sec)
-#TODO: Python 3 support
 
 if PY3:
     string_types = str,
@@ -143,8 +150,7 @@ class Fuzzer:
     last = last.split(" ")[1:] # cut timestamp
     for i, stat in enumerate(last):
         stat = float(stat.split(":")[1])  # taking actual value
-        # TODO: not compatible with Python3
-        # https://stackoverflow.com/questions/10058140/accessing-items-in-an-collections-ordereddict-by-index
+        # TODO: i#10 This is not compatible with Python 3.
         stat_name = self.fuzzer_stats.stats.items()[i][0]
         self.fuzzer_stats.stats[stat_name] = stat
 
@@ -221,7 +227,7 @@ class Fuzzer:
         res = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
       except subprocess.CalledProcessError as exc:
         INFO(1, None, self.log_file, "Initial input %s triggers exception in the target" % file_name)
-        if self.is_critical(exc): # TODO: check that it works under python3
+        if self.is_critical(exc):
           WARNING(self.log_file, "Initial input %s leads target to crash (did you disable leak sanitizer?). Enable -d or -l to check actual output" % file_name)
           INFO(1, None, self.log_file, exc.output)
         elif self.is_problem_with_config(exc):
@@ -388,7 +394,7 @@ class Fuzzer:
         try:
           res = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True) # generate new input
         except subprocess.CalledProcessError as exc:
-          WARNING(self.log_file, "Fuzzer %d failed to generate new input from %s due to some problem with radamsa. Error code %d. Return msg %s" % 
+          WARNING(self.log_file, "Fuzzer %d failed to generate new input from %s due to some problem with radamsa. Error code %d. Return msg %s" %
                   (self.fuzzer_id, file_name, exc.returncode, exc.output))
           continue
 
@@ -522,14 +528,14 @@ def configure_dbi(dbi_name, target_binary):
 
     DBI_TOOL_PARAMS = ""
     if dbi_name == "dynamorio":
-        #TODO: corner case https://stackoverflow.com/questions/8384737/extract-file-name-from-path-no-matter-what-the-os-path-format
+        #TODO i#12: corner case is not handled here
         DBI_TOOL_PARAMS += "-coverage_module %s " % ntpath.basename(target_binary)
         if dbi_tool_libs is not None:
             for target_lib in dbi_tool_libs.split(","):
                 if target_lib == "":
                     continue
                 DBI_TOOL_PARAMS += "-coverage_module %s " % target_lib
-    elif dbi_name == "pin": # TODO: handle when dbi_tool_libs is None
+    elif dbi_name == "pin": # TODO i#13: handle when dbi_tool_libs is None
         if dbi_tool_libs is not None:
             # adding desired libs to instrument
             fd = open("dbi_config", 'w')
@@ -603,8 +609,7 @@ def allocate_files_per_jobs(args):
     return files
 
 def parse_args():
-    #TODO: add config file + pretty printing
-    parser = argparse.ArgumentParser(prog = "manul.py", 
+    parser = argparse.ArgumentParser(prog = "manul.py",
                                      description = '????',
                                      usage = '%(prog)s -i /home/user/inputs_dir -o /home/user/outputs_dir -n 40 "pdftocairo -png @@"')
     requiredNamed = parser.add_argument_group('Required parameters')
@@ -647,7 +652,7 @@ if __name__ == "__main__":
     printing.DEBUG_PRINT = args.debug
 
     binary_to_check = args.target_binary[0]
-    target_binary = binary_to_check.split(" ")[0] # TODO: here we assume that our path to binary doesn't have spaces
+    target_binary = binary_to_check.split(" ")[0] # TODO i#15: here we assume that our path to binary doesn't have spaces
 
     if args.dbi is not None:
         configure_dbi(args.dbi, target_binary)
@@ -656,7 +661,7 @@ if __name__ == "__main__":
 
     if not args.simple_mode and args.dbi is None and not check_instrumentation(target_binary):
         ERROR("Failed to find afl's instrumentation in the target binary, try to recompile or run manul in dumb mode")
-# TODO: check that our backend fuzzer actually exist
+    # TODO i#16: check that our backend fuzzer actually exist
     if not os.path.isdir(args.input):
         ERROR("Input directory doesn't exist")
 
@@ -715,7 +720,7 @@ if __name__ == "__main__":
         sync_t.start()
 
     try:
-        while True: #TODO: https://stackoverflow.com/questions/2564137/python-how-to-terminate-a-thread-when-main-program-ends
+        while True: #TODO i#17: Terminate thread when user send terminate signal
             threads_inactive = 0
             for i, t in enumerate(all_threads_handles):
                 if not t.is_alive():
