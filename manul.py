@@ -1,23 +1,21 @@
-'''
-   manul - main module
-   -------------------------------------
-   Written and maintained by Maksim Shudrak <mshudrak@salesforce.com> <mxmssh@gmail.com>
+#   manul - main module
+#   -------------------------------------
+#   Written and maintained by Maksim Shudrak <mshudrak@salesforce.com> <mxmssh@gmail.com>
+#
+#   Copyright 2019 Salesforce.com, inc. All rights reserved.
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at:
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
 
-   Copyright 2019 Salesforce.com, inc. All rights reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at:
-     http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-'''
-
-
+import sys
 from os import listdir
 from os.path import isfile, join
 import subprocess
@@ -43,431 +41,431 @@ else:
     string_types = basestring,
     xrange = xrange
 
+
 class Fuzzer:
-  def __init__(self, list_of_files, fuzzer_id, virgin_bits_global, input_path, output_path, is_dumb_mode, target_binary,
-               timeout, stats_array, enable_logging, restore_session, dbi_name, determenistic, crash_bits):
-    # local fuzzer config
-    global SHM_SIZE
-    self.SHM_SIZE = SHM_SIZE
-    self.CALIBRATIONS_COUNT = 7
-    self.SHM_ENV_VAR = "__AFL_SHM_ID"
-    self.dbi = dbi_name
+    def __init__(self, list_of_files, fuzzer_id, virgin_bits_global, input_path, output_path, is_dumb_mode,
+                 target_binary, timeout, stats_array, enable_logging, restore_session, dbi_name, determenistic,
+                 crash_bits):
+        # local fuzzer config
+        global SHM_SIZE
+        self.SHM_SIZE = SHM_SIZE
+        self.CALIBRATIONS_COUNT = 7
+        self.SHM_ENV_VAR = "__AFL_SHM_ID"
+        self.dbi = dbi_name
 
-    self.list_of_files = list_of_files
-    self.fuzzer_id = fuzzer_id
-    self.virgin_bits = list()
-    for i in range(0, SHM_SIZE):
-        self.virgin_bits.append(0xFF)
+        self.list_of_files = list_of_files
+        self.fuzzer_id = fuzzer_id
+        self.virgin_bits = list()
+        self.virgin_bits = [0xFF] * SHM_SIZE
 
-    self.global_map = virgin_bits_global
-    self.crash_bits = crash_bits # happens not too often
-
-    self.timeout = timeout
-    self.stats_array = stats_array
-    self.restore = restore_session
-
-    self.determenistic = determenistic
-    if self.determenistic:
-        random.seed(a=self.fuzzer_id)
-
-    #creating output dir structure
-    self.output_path = output_path + "/%d" % fuzzer_id
-    self.queue_path = self.output_path + "/queue"
-    self.crashes_path = self.output_path + "/crashes"
-    self.unique_crashes_path = self.crashes_path + "/unique"
-
-    if not self.restore:
-        try:
-          os.mkdir(self.output_path)
-        except:
-          ERROR("Failed to create required output dir structure (unique dir)")
-        try:
-          os.mkdir(self.queue_path)
-        except:
-          ERROR("Failed to create required output dir structure (queue)")
-        try:
-          os.mkdir(self.crashes_path)
-        except:
-          ERROR("Failed to create required output dir structure (crashes)")
-        try:
-          os.mkdir(self.unique_crashes_path)
-        except:
-          ERROR("Failed to create required output dir structure (unique crashes)")
-
-
-    self.is_dumb_mode = is_dumb_mode
-    self.input_path = input_path
-    self.target_binary_path = target_binary # and its arguments
-
-    self.fuzzer_stats = FuzzerStats()
-    self.stats_file = None
-    if self.restore:
-      if not isfile(self.output_path + "/fuzzer_stats"):
-          ERROR("Fuzzer stats file doesn't exist. Make sure your output is actual working dir of manul")
-
-      self.stats_file = open(self.output_path + "/fuzzer_stats", 'r')
-      content = self.stats_file.readlines()
-      line = None
-      for line in content: # getting last line from file to restore ression
-          pass
-      if line is None:
-          ERROR("Failed to restore fuzzer %d from stats. Invalid fuzzeR_stats format" % self.fuzzer_id)
-
-      last = line[:-2] # skipping last symbol space and \n
-      INFO(0, None, None, "Restoring last stats %s" % last)
-      self.stats_file.close()
-      self.restore_session(last)
-
-      self.stats_file = open(self.output_path + "/fuzzer_stats", 'a')
-    else:
-      self.stats_file = open(self.output_path + "/fuzzer_stats", 'w')
-
-    self.enable_logging = enable_logging
-    self.log_file = None
-    if self.enable_logging:
-      self.log_file = open(self.output_path + "/fuzzer_log", 'a')
-
-    if not self.is_dumb_mode:
-      self.trace_bits = self.setup_shm()
-
-      for i in range(0, self.SHM_SIZE):
-        if self.virgin_bits[i] != 0xFF:
-          self.global_map[i] = self.virgin_bits[i]
-        elif self.global_map[i] != 0xFF and self.virgin_bits[i] == 0xFF:
-          self.virgin_bits[i] = self.global_map[i]
-
-  def sync_bitmap(self):
-    if self.is_dumb_mode:
-        return
-    for i in range(0, self.SHM_SIZE):
-      if self.virgin_bits[i] != 0xFF:
-        self.global_map[i] = self.virgin_bits[i]
-      elif self.global_map[i] != 0xFF and self.virgin_bits[i] == 0xFF:
-        self.virgin_bits[i] = self.global_map[i]
-
-  def restore_session(self, last):
-    # parse previously saved stats line
-    last = last.split(" ")[1:] # cut timestamp
-    for i, stat in enumerate(last):
-        stat = float(stat.split(":")[1])  # taking actual value
-        # TODO: i#10 This is not compatible with Python 3.
-        stat_name = self.fuzzer_stats.stats.items()[i][0]
-        self.fuzzer_stats.stats[stat_name] = stat
-
-    if self.deterministic: # skip already seen seeds
-        for i in range(0, self.fuzzer_stats.stats['iterations']):
-            random.seed(seed=self.fuzzer_id)
-
-  def save_stats(self):
-      if self.stats_file is None:
-          return
-
-      self.stats_file.write(str(time.time()) + " ")
-      for i, (k,v) in enumerate(self.fuzzer_stats.stats.items()):
-          self.stats_file.write("%d:%.2f " % (i,v))
-      self.stats_file.write("\n")
-
-  def prepare_cmd_to_run(self, target_file_path):
-    if self.dbi:
-        dbi_tool_opt = "-c"
-        if self.dbi == "pin":
-            dbi_tool_opt = "-t"
-        timeout_long = self.timeout * 30 # DBI introduce overhead ~ x30
-        timeout_prefix = ("timeout %ds" % timeout_long)
-        binary_path = "".join(self.target_binary_path)
-        binary_path = binary_path.replace("@@", target_file_path)
-
-        final_string = "%s %s %s %s %s -- %s" % (
-                        timeout_prefix, DBI_ENGINE_PATH, dbi_tool_opt, DBI_TOOL_PATH, DBI_TOOL_PARAMS, binary_path)
-    else:
-        final_string = ("timeout %ds " % self.timeout) + "".join(self.target_binary_path)
-        final_string = final_string.replace("@@", target_file_path)
-
-    return final_string
-
-  def setup_shm(self):
-    IPC_PRIVATE = 0
-
-    try:
-      rt = CDLL('librt.so')
-    except:
-      rt = CDLL('librt.so.1')
-
-    shmget = rt.shmget
-    shmget.argtypes = [c_int, c_size_t, c_int]
-    shmget.restype = c_int
-    shmat = rt.shmat
-    shmat.argtypes = [c_int, POINTER(c_void_p), c_int]
-    shmat.restype = c_void_p
-
-    shmid = shmget(IPC_PRIVATE, self.SHM_SIZE, 0o666)
-    if shmid < 0:
-      ERROR("shmget() failed")
-
-    addr = bytearray(self.SHM_SIZE)
-    addr = shmat(shmid, None, 0)
-
-    INFO(0, None, self.log_file, "Setting up shared mem %d for fuzzer:%d" % (shmid, self.fuzzer_id))
-    os.environ[self.SHM_ENV_VAR] = str(shmid)
-
-    return addr
-
-  def dry_run(self):
-    INFO(0, bcolors.BOLD + bcolors.HEADER, self.log_file, "Performing dry run")
-    useless = 0
-
-    for file_name in self.list_of_files:
-      memset(self.trace_bits, 0x0, SHM_SIZE)
-
-      cmd = self.prepare_cmd_to_run(self.input_path + "/" + file_name)
-
-      INFO(1, bcolors.BOLD, self.log_file, "Running %s" % cmd)
-
-      try:
-        res = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
-      except subprocess.CalledProcessError as exc:
-        INFO(1, None, self.log_file, "Initial input %s triggers exception in the target" % file_name)
-        if self.is_critical(exc):
-          WARNING(self.log_file, "Initial input %s leads target to crash (did you disable leak sanitizer?). Enable -d or -l to check actual output" % file_name)
-          INFO(1, None, self.log_file, exc.output)
-        elif self.is_problem_with_config(exc):
-          WARNING(self.log_file, "Problematic file %s" % file_name)
-        res = exc.output
-
-      trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE)
-
-      # count non-zero bytes just to check that instrumentation actually works
-      non_zeros = [x for x in trace_bits_as_str if x != 0x0]
-      if len(non_zeros) == 0:
-        INFO(1, None, self.log_file, "Output from target %s" % res)
-        ERROR("%s doesn't cover any path in the target, Make sure the binary is actually instrumented" % file_name)
-
-      ret = self.has_new_bits(trace_bits_as_str, True, list(), self.virgin_bits)
-      if ret == 0:
-        useless += 1
-        WARNING(self.log_file, "Test %s might be useless because it doesn't cover new paths in the target, consider removing it" % file_name)
-      else:
-        self.sync_bitmap()
-
-    if useless != 0:
-      WARNING(self.log_file, "%d out of %d initial files are useless" % (useless, len(self.list_of_files)))
-
-    INFO(0, bcolors.BOLD + bcolors.OKBLUE, self.log_file, "Dry run finished")
-    self.fuzzer_stats.stats['iterations'] += 1.0
-    self.update_stats()
-
-  def has_new_bits(self, trace_bits_as_str, update_virgin_bits, volatile_bytes, bitmap_to_compare):
-    ret = 0
-    for j in range(0, SHM_SIZE):
-
-      if j in volatile_bytes:
-        continue # ignoring volatile bytes
-      if PY3:
-        trace_byte = trace_bits_as_str[j]
-      else:
-        trace_byte = ord(trace_bits_as_str[j])
-      virgin_byte = bitmap_to_compare[j]
-
-      if trace_byte and (trace_byte & virgin_byte):
-        if ret < 2 and (trace_byte != 0x0 and virgin_byte == 0xff):
-          ret = 2 # new path discovered
+        self.global_map = virgin_bits_global
+        self.crash_bits = crash_bits  # happens not too often
+    
+        self.timeout = timeout
+        self.stats_array = stats_array
+        self.restore = restore_session
+    
+        self.determenistic = determenistic
+        if self.determenistic:
+            random.seed(a=self.fuzzer_id)
+    
+        # creating output dir structure
+        self.output_path = output_path + "/%d" % fuzzer_id
+        self.queue_path = self.output_path + "/queue"
+        self.crashes_path = self.output_path + "/crashes"
+        self.unique_crashes_path = self.crashes_path + "/unique"
+    
+        if not self.restore:
+            try:
+                os.mkdir(self.output_path)
+            except:
+                ERROR("Failed to create required output dir structure (unique dir)")
+            try:
+                os.mkdir(self.queue_path)
+            except:
+                ERROR("Failed to create required output dir structure (queue)")
+            try:
+                os.mkdir(self.crashes_path)
+            except:
+                ERROR("Failed to create required output dir structure (crashes)")
+            try:
+                os.mkdir(self.unique_crashes_path)
+            except:
+                ERROR("Failed to create required output dir structure (unique crashes)")
+    
+        self.is_dumb_mode = is_dumb_mode
+        self.input_path = input_path
+        self.target_binary_path = target_binary # and its arguments
+    
+        self.fuzzer_stats = FuzzerStats()
+        self.stats_file = None
+        if self.restore:
+            if not isfile(self.output_path + "/fuzzer_stats"):
+                ERROR("Fuzzer stats file doesn't exist. Make sure your output is actual working dir of manul")
+    
+            self.stats_file = open(self.output_path + "/fuzzer_stats", 'r')
+            content = self.stats_file.readlines()
+            line = None
+            for line in content: # getting last line from file to restore ression
+                pass
+            if line is None:
+                ERROR("Failed to restore fuzzer %d from stats. Invalid fuzzeR_stats format" % self.fuzzer_id)
+    
+            last = line[:-2] # skipping last symbol space and \n
+            INFO(0, None, None, "Restoring last stats %s" % last)
+            self.stats_file.close()
+            self.restore_session(last)
+    
+            self.stats_file = open(self.output_path + "/fuzzer_stats", 'a')
         else:
-          ret = 1 # a new hit of already seen path
-
-        virgin_byte = virgin_byte & ~trace_byte
-
-        if update_virgin_bits:
-            bitmap_to_compare[j] = virgin_byte # python will handle syncronization issues
-
-    return ret
-
-  def calibrate_test_case(self, file_name):
-    volatile_bytes = list()
-    trace_bits_as_str = string_at(self.trace_bits, self.SHM_SIZE) # this is how we read memory in Python
-
-    bitmap_to_compare = list("\x00" * self.SHM_SIZE)
-    for i in range(0, self.SHM_SIZE):
-      if PY3:
-        bitmap_to_compare[i] = trace_bits_as_str[i]
-      else:
-        bitmap_to_compare[i] = ord(trace_bits_as_str[i])
-
-    for i in range(0, self.CALIBRATIONS_COUNT):
-      INFO(1, None, self.log_file, "Calibrating %s %d" % (file_name, i))
-
-      memset(self.trace_bits, 0x0, SHM_SIZE)
-
-      cmd = self.prepare_cmd_to_run(self.queue_path + "/" + file_name)
-      try:
-        INFO(1, None, self.log_file, cmd)
-        res = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True) # running our target again
-      except subprocess.CalledProcessError as exc:
-        INFO(1, None, self.log_file, "Error is not expected during calibration, something wrong with %s" % file_name)
-        INFO(1, None, self.log_file, exc)
-
-      trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
-
-      for j in range(0, SHM_SIZE):
-        if PY3:
-            trace_byte = trace_bits_as_str[j]
-        else:
-            trace_byte = ord(trace_bits_as_str[j])
-        if trace_byte != bitmap_to_compare[j]:
-          if j not in volatile_bytes:
-            volatile_bytes.append(j) # mark offset of this byte as volatile
-
-    INFO(1, None, self.log_file, "We have %d volatile bytes for this new finding" % len(volatile_bytes))
-    # let's try to check for new coverage ignoring volatile bytes
-    self.fuzzer_stats.stats['blacklisted_paths'] = len(volatile_bytes)
-    return self.has_new_bits(trace_bits_as_str, True, volatile_bytes, self.virgin_bits) # it means that we're returning result of the last run (might be wrong)
-
-  def update_stats(self):
-    for i, (k,v) in enumerate(self.fuzzer_stats.stats.items()):
-      self.stats_array[i] = v
-
-  def is_problem_with_config(self, exc):
-      if exc.returncode == 127 or exc.returncode == 126: # command not found or permissions
-          ERROR("Thread %d unable to execute target. Bash return %s" % (self.fuzzer_id, exc.output))
-      elif exc.returncode == 124: #timeout
-          WARNING(self.log_file, "Target failed to finish execution within given timeout, try to increase default timeout")
-          return True
-      return False
-
-  def generate_new_name(self, file_name):
-      iteration = int(round(self.fuzzer_stats.stats['iterations']))
-      if file_name.startswith("raiter"): # raiterDateTime:FuzzerId:iteration_original_name
-          base_name = file_name[file_name.find("_")+1:]
-          file_name = base_name
-
-      now = int(round(time.time()))
-      return "raiter%d:%d:%d_%s" % (now, self.fuzzer_id, iteration, file_name)
-
-  def is_critical(self, exc):
-      output = str(exc)
-      if "Sanitizer" in output or "SIGSEGV" in output:
-          return True
-      if exc.returncode > 128:  # this is the way to check for errors in no-ASAN mode
-          if IGNORE_ABORT and exc.returncode == (128 + 6): # signal 6 is SIABRT
-            return False
-          return True
-      return False
-
-  def run(self):
-    if not self.is_dumb_mode:
-      self.dry_run()
-
-    last_stats_saved_time = 0
-
-    if self.restore:
-      INFO(0, bcolors.BOLD + bcolors.OKBLUE, self.log_file, "Session sucessfully restored")
-
-    while True: # never return
-      new_files = list() # empty the list
-      elapsed = 0
-      init_start = timer()
-      new_seed_str = ""
-      self.fuzzer_stats.stats['iterations'] += 1.0
-      if self.determenistic:
-          new_seed = random.randint(0, sys.maxsize)
-          new_seed_str = "--seed %d " % new_seed
-
-      for i, file_name in enumerate(self.list_of_files):
-        crash_found = False
-        self.fuzzer_stats.stats['file_running'] = i
-
-        full_input_file_path = self.input_path + "/"
-        # if we have tuple and not string here it means that this file was found during execution and located in queue
-        if not isinstance(file_name, string_types):
-          file_name = file_name[1]
-          full_input_file_path = self.queue_path + "/"
-        full_input_file_path += file_name
-
+            self.stats_file = open(self.output_path + "/fuzzer_stats", 'w')
+    
+        self.enable_logging = enable_logging
+        self.log_file = None
+        if self.enable_logging:
+            self.log_file = open(self.output_path + "/fuzzer_log", 'a')
+    
         if not self.is_dumb_mode:
-          memset(self.trace_bits, 0x0, SHM_SIZE) # preparing our bitmap for new run
+            self.trace_bits = self.setup_shm()
+    
+            for i in range(0, self.SHM_SIZE):
+                if self.virgin_bits[i] != 0xFF:
+                    self.global_map[i] = self.virgin_bits[i]
+                elif self.global_map[i] != 0xFF and self.virgin_bits[i] == 0xFF:
+                    self.virgin_bits[i] = self.global_map[i]
 
-        mutated_name = file_name + "_mutated"
-        full_output_file_path = self.queue_path + "/" + mutated_name
+    def sync_bitmap(self):
+        if self.is_dumb_mode:
+            return
+        for i in range(0, self.SHM_SIZE):
+            if self.virgin_bits[i] != 0xFF:
+                self.global_map[i] = self.virgin_bits[i]
+            elif self.global_map[i] != 0xFF and self.virgin_bits[i] == 0xFF:
+                self.virgin_bits[i] = self.global_map[i]
 
-        # command to generate new input using radamsa
-        cmd = "radamsa %s%s > %s" % (new_seed_str, full_input_file_path, full_output_file_path)
-        INFO(1, None, self.log_file, "Running %s" % cmd)
+    def restore_session(self, last):
+        # parse previously saved stats line
+        last = last.split(" ")[1:] # cut timestamp
+        for index, stat in enumerate(last):
+            stat = float(stat.split(":")[1])  # taking actual value
+            # TODO: i#10 This is not compatible with Python 3.
+            stat_name = self.fuzzer_stats.stats.items()[index][0]
+            self.fuzzer_stats.stats[stat_name] = stat
+
+        if self.determenistic: # skip already seen seeds
+            for i in range(0, self.fuzzer_stats.stats['iterations']):
+                random.seed(seed=self.fuzzer_id)
+
+    def save_stats(self):
+        if self.stats_file is None:
+            return
+
+        self.stats_file.write(str(time.time()) + " ")
+        for index, (k,v) in enumerate(self.fuzzer_stats.stats.items()):
+            self.stats_file.write("%d:%.2f " % (index, v))
+        self.stats_file.write("\n")
+
+    def prepare_cmd_to_run(self, target_file_path):
+        if self.dbi:
+            dbi_tool_opt = "-c"
+            if self.dbi == "pin":
+                dbi_tool_opt = "-t"
+            timeout_long = self.timeout * 30  # DBI introduce overhead ~ x30
+            timeout_prefix = ("timeout %ds" % timeout_long)
+            binary_path = "".join(self.target_binary_path)
+            binary_path = binary_path.replace("@@", target_file_path)
+
+            final_string = "%s %s %s %s %s -- %s" % (
+                            timeout_prefix, DBI_ENGINE_PATH, dbi_tool_opt, DBI_TOOL_PATH, DBI_TOOL_PARAMS, binary_path)
+        else:
+            final_string = ("timeout %ds " % self.timeout) + "".join(self.target_binary_path)
+            final_string = final_string.replace("@@", target_file_path)
+
+        return final_string
+
+    def setup_shm(self):
+        IPC_PRIVATE = 0
+
         try:
-          res = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True) # generate new input
-        except subprocess.CalledProcessError as exc:
-          WARNING(self.log_file, "Fuzzer %d failed to generate new input from %s due to some problem with radamsa. Error code %d. Return msg %s" %
-                  (self.fuzzer_id, file_name, exc.returncode, exc.output))
-          continue
+            rt = CDLL('librt.so')
+        except:
+            rt = CDLL('librt.so.1')
 
-        cmd = self.prepare_cmd_to_run(full_output_file_path)
-        INFO(1, None, self.log_file, "Running %s" % cmd)
-        start = timer()
-        try:
-          res = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True) # run target with new input
-        except subprocess.CalledProcessError as exc:
-          elapsed += (timer() - start)
-          self.fuzzer_stats.stats['exceptions'] += 1
-          INFO(1, None, self.log_file, "Target raised exception and returns %d error code" % exc.returncode)
+        shmget = rt.shmget
+        shmget.argtypes = [c_int, c_size_t, c_int]
+        shmget.restype = c_int
+        shmat = rt.shmat
+        shmat.argtypes = [c_int, POINTER(c_void_p), c_int]
+        shmat.restype = c_void_p
 
-          if self.is_critical(exc):
-            INFO(0, bcolors.BOLD + bcolors.OKGREEN, self.log_file, "New crash found by fuzzer %d" % self.fuzzer_id)
-            self.fuzzer_stats.stats["last_crash_time"] = time.time()
+        shmid = shmget(IPC_PRIVATE, self.SHM_SIZE, 0o666)
+        if shmid < 0:
+            ERROR("shmget() failed")
 
-            new_name = self.generate_new_name(file_name)
-            shutil.copy(full_output_file_path, self.crashes_path + "/" + new_name) # copying into crash folder
-            self.fuzzer_stats.stats['crashes'] += 1
+        addr = shmat(shmid, None, 0)
 
-            if not self.is_dumb_mode:
-              trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
-              ret = self.has_new_bits(trace_bits_as_str, True, list(), self.crash_bits)
-              if ret == 2:
-                INFO(0, bcolors.BOLD + bcolors.OKGREEN, self.log_file, "Crash is unique")
-                self.fuzzer_stats.stats['unique_crashes'] += 1
-                shutil.copy(full_output_file_path, self.unique_crashes_path + "/" + new_name) # copying into crash folder with unique crashes
+        INFO(0, None, self.log_file, "Setting up shared mem %d for fuzzer:%d" % (shmid, self.fuzzer_id))
+        os.environ[self.SHM_ENV_VAR] = str(shmid)
 
-            crash_found = True
+        return addr
 
-          elif self.is_problem_with_config(exc):
-            WARNING(self.log_file, "Problematic file: %s" % file_name)
+    def dry_run(self):
+        INFO(0, bcolors.BOLD + bcolors.HEADER, self.log_file, "Performing dry run")
+        useless = 0
 
-        elapsed += (timer() - start)
+        for file_name in self.list_of_files:
+            memset(self.trace_bits, 0x0, SHM_SIZE)
 
-        if not crash_found and not self.is_dumb_mode:
-          # Reading the coverage
-          trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
-          ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits) # we are not ready to update coverage at this stage due to volatile bytes
-          if ret == 2:
-            INFO(1, None, self.log_file, "Input %s produces new coverage, calibrating" % file_name)
-            if self.calibrate_test_case(mutated_name) == 2:
-              self.fuzzer_stats.stats['new_paths'] += 1
-              self.fuzzer_stats.stats['last_path_time'] = timer()
-              INFO(1, None, self.log_file, "Calibration finished sucessfully. Saving new finding")
-              new_coverage_file_name = self.generate_new_name(file_name)
-              shutil.copy(full_output_file_path, self.queue_path + "/" + new_coverage_file_name)
-              new_files.append((1, new_coverage_file_name))
+            cmd = self.prepare_cmd_to_run(self.input_path + "/" + file_name)
 
+            INFO(1, bcolors.BOLD, self.log_file, "Running %s" % cmd)
+
+            try:
+                res = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
+            except subprocess.CalledProcessError as exc:
+                INFO(1, None, self.log_file, "Initial input %s triggers exception in the target" % file_name)
+                if self.is_critical(exc):
+                    WARNING(self.log_file, "Initial input %s leads target to crash (did you disable leak sanitizer?). Enable -d or -l to check actual output" % file_name)
+                    INFO(1, None, self.log_file, exc.output)
+                elif self.is_problem_with_config(exc):
+                    WARNING(self.log_file, "Problematic file %s" % file_name)
+                res = exc.output
+
+            trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE)
+
+            # count non-zero bytes just to check that instrumentation actually works
+            non_zeros = [x for x in trace_bits_as_str if x != 0x0]
+            if len(non_zeros) == 0:
+                INFO(1, None, self.log_file, "Output from target %s" % res)
+                ERROR("%s doesn't cover any path in the target, Make sure the binary is actually instrumented" % file_name)
+
+            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.virgin_bits)
+            if ret == 0:
+                useless += 1
+                WARNING(self.log_file, "Test %s might be useless because it doesn't cover new paths in the target, consider removing it" % file_name)
+            else:
+                self.sync_bitmap()
+
+        if useless != 0:
+            WARNING(self.log_file, "%d out of %d initial files are useless" % (useless, len(self.list_of_files)))
+
+        INFO(0, bcolors.BOLD + bcolors.OKBLUE, self.log_file, "Dry run finished")
+        self.fuzzer_stats.stats['iterations'] += 1.0
         self.update_stats()
 
-      self.sync_bitmap()
+    def has_new_bits(self, trace_bits_as_str, update_virgin_bits, volatile_bytes, bitmap_to_compare):
+        ret = 0
+        for j in range(0, SHM_SIZE):
+            if j in volatile_bytes:
+                continue  # ignoring volatile bytes
+            if PY3:
+                trace_byte = trace_bits_as_str[j]
+            else:
+                trace_byte = ord(trace_bits_as_str[j])
+            virgin_byte = bitmap_to_compare[j]
 
-      init_end = timer() - init_start
-      # calculating execution speed
-      if init_end != 0:
-        self.fuzzer_stats.stats['exec_per_sec'] = len(self.list_of_files) / init_end
+            if trace_byte and (trace_byte & virgin_byte):
+                if ret < 2 and (trace_byte != 0x0 and virgin_byte == 0xff):
+                    ret = 2 # new path discovered
+                else:
+                    ret = 1 # a new hit of already seen path
 
-      if len(new_files) > 0:
-        self.list_of_files = self.list_of_files + new_files
-      self.fuzzer_stats.stats['iterations'] += 1.0
-      self.fuzzer_stats.stats['files_in_queue'] = len(self.list_of_files)
+                virgin_byte = virgin_byte & ~trace_byte
 
-      self.update_stats()
-      last_stats_saved_time += elapsed
-      if last_stats_saved_time > 1: # we save fuzzer stats per iteration or once per second to avoid huge stats files
-        self.save_stats()
+                if update_virgin_bits:
+                    bitmap_to_compare[j] = virgin_byte # python will handle syncronization issues
+
+        return ret
+
+    def calibrate_test_case(self, file_name):
+        volatile_bytes = list()
+        trace_bits_as_str = string_at(self.trace_bits, self.SHM_SIZE) # this is how we read memory in Python
+
+        bitmap_to_compare = list("\x00" * self.SHM_SIZE)
+        for i in range(0, self.SHM_SIZE):
+            if PY3:
+                bitmap_to_compare[i] = trace_bits_as_str[i]
+            else:
+                bitmap_to_compare[i] = ord(trace_bits_as_str[i])
+
+        for i in range(0, self.CALIBRATIONS_COUNT):
+            INFO(1, None, self.log_file, "Calibrating %s %d" % (file_name, i))
+
+            memset(self.trace_bits, 0x0, SHM_SIZE)
+
+            cmd = self.prepare_cmd_to_run(self.queue_path + "/" + file_name)
+            try:
+                INFO(1, None, self.log_file, cmd)
+                res = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True) # running our target again
+            except subprocess.CalledProcessError as exc:
+                INFO(1, None, self.log_file, "Error is not expected during calibration, something wrong with %s" % file_name)
+                INFO(1, None, self.log_file, exc)
+
+            trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
+
+            for j in range(0, SHM_SIZE):
+                if PY3:
+                    trace_byte = trace_bits_as_str[j]
+                else:
+                    trace_byte = ord(trace_bits_as_str[j])
+                if trace_byte != bitmap_to_compare[j]:
+                    if j not in volatile_bytes:
+                        volatile_bytes.append(j) # mark offset of this byte as volatile
+
+        INFO(1, None, self.log_file, "We have %d volatile bytes for this new finding" % len(volatile_bytes))
+        # let's try to check for new coverage ignoring volatile bytes
+        self.fuzzer_stats.stats['blacklisted_paths'] = len(volatile_bytes)
+        return self.has_new_bits(trace_bits_as_str, True, volatile_bytes, self.virgin_bits) # it means that we're returning result of the last run (might be wrong)
+
+    def update_stats(self):
+        for i, (k,v) in enumerate(self.fuzzer_stats.stats.items()):
+            self.stats_array[i] = v
+
+    def is_problem_with_config(self, exc):
+        if exc.returncode == 127 or exc.returncode == 126: # command not found or permissions
+            ERROR("Thread %d unable to execute target. Bash return %s" % (self.fuzzer_id, exc.output))
+        elif exc.returncode == 124: #timeout
+            WARNING(self.log_file, "Target failed to finish execution within given timeout, try to increase default timeout")
+            return True
+        return False
+
+    def generate_new_name(self, file_name):
+        iteration = int(round(self.fuzzer_stats.stats['iterations']))
+        if file_name.startswith("raiter"): # raiterDateTime:FuzzerId:iteration_original_name
+            base_name = file_name[file_name.find("_")+1:]
+            file_name = base_name
+
+        now = int(round(time.time()))
+        return "raiter%d:%d:%d_%s" % (now, self.fuzzer_id, iteration, file_name)
+
+    def is_critical(self, exc):
+        output = str(exc)
+        if "Sanitizer" in output or "SIGSEGV" in output:
+            return True
+        if exc.returncode > 128:  # this is the way to check for errors in no-ASAN mode
+            if IGNORE_ABORT and exc.returncode == (128 + 6): # signal 6 is SIABRT
+                return False
+            return True
+        return False
+
+    def run(self):
+        if not self.is_dumb_mode:
+            self.dry_run()
+
         last_stats_saved_time = 0
+
+        if self.restore:
+            INFO(0, bcolors.BOLD + bcolors.OKBLUE, self.log_file, "Session sucessfully restored")
+
+        while True: # never return
+            new_files = list() # empty the list
+            elapsed = 0
+            init_start = timer()
+            new_seed_str = ""
+            self.fuzzer_stats.stats['iterations'] += 1.0
+            if self.determenistic:
+                new_seed = random.randint(0, sys.maxsize)
+                new_seed_str = "--seed %d " % new_seed
+
+            for i, file_name in enumerate(self.list_of_files):
+                crash_found = False
+                self.fuzzer_stats.stats['file_running'] = i
+
+                full_input_file_path = self.input_path + "/"
+                # if we have tuple and not string here it means that this file was found during execution and located in queue
+                if not isinstance(file_name, string_types):
+                    file_name = file_name[1]
+                    full_input_file_path = self.queue_path + "/"
+                full_input_file_path += file_name
+
+                if not self.is_dumb_mode:
+                    memset(self.trace_bits, 0x0, SHM_SIZE) # preparing our bitmap for new run
+
+                mutated_name = file_name + "_mutated"
+                full_output_file_path = self.queue_path + "/" + mutated_name
+
+                # command to generate new input using radamsa
+                cmd = "radamsa %s%s > %s" % (new_seed_str, full_input_file_path, full_output_file_path)
+                INFO(1, None, self.log_file, "Running %s" % cmd)
+                try:
+                    subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True) # generate new input
+                except subprocess.CalledProcessError as exc:
+                    WARNING(self.log_file, "Fuzzer %d failed to generate new input from %s due to some problem with radamsa. Error code %d. Return msg %s" %
+                           (self.fuzzer_id, file_name, exc.returncode, exc.output))
+                    continue
+
+                cmd = self.prepare_cmd_to_run(full_output_file_path)
+                INFO(1, None, self.log_file, "Running %s" % cmd)
+                timer_start = timer()
+                try:
+                    subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True) # run target with new input
+                except subprocess.CalledProcessError as exc:
+                    elapsed += (timer() - start)
+                    self.fuzzer_stats.stats['exceptions'] += 1
+                    INFO(1, None, self.log_file, "Target raised exception and returns %d error code" % exc.returncode)
+
+                    if self.is_critical(exc):
+                        INFO(0, bcolors.BOLD + bcolors.OKGREEN, self.log_file, "New crash found by fuzzer %d" % self.fuzzer_id)
+                        self.fuzzer_stats.stats["last_crash_time"] = time.time()
+
+                        new_name = self.generate_new_name(file_name)
+                        shutil.copy(full_output_file_path, self.crashes_path + "/" + new_name) # copying into crash folder
+                        self.fuzzer_stats.stats['crashes'] += 1
+
+                        if not self.is_dumb_mode:
+                            trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
+                            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.crash_bits)
+                            if ret == 2:
+                                INFO(0, bcolors.BOLD + bcolors.OKGREEN, self.log_file, "Crash is unique")
+                                self.fuzzer_stats.stats['unique_crashes'] += 1
+                                shutil.copy(full_output_file_path, self.unique_crashes_path + "/" + new_name) # copying into crash folder with unique crashes
+
+                        crash_found = True
+
+                    elif self.is_problem_with_config(exc):
+                        WARNING(self.log_file, "Problematic file: %s" % file_name)
+
+                elapsed += (timer() - timer_start)
+
+                if not crash_found and not self.is_dumb_mode:
+                    # Reading the coverage
+                    trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
+                    ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits) # we are not ready to update coverage at this stage due to volatile bytes
+                    if ret == 2:
+                        INFO(1, None, self.log_file, "Input %s produces new coverage, calibrating" % file_name)
+                    if self.calibrate_test_case(mutated_name) == 2:
+                        self.fuzzer_stats.stats['new_paths'] += 1
+                        self.fuzzer_stats.stats['last_path_time'] = timer()
+                        INFO(1, None, self.log_file, "Calibration finished sucessfully. Saving new finding")
+                        new_coverage_file_name = self.generate_new_name(file_name)
+                        shutil.copy(full_output_file_path, self.queue_path + "/" + new_coverage_file_name)
+                        new_files.append((1, new_coverage_file_name))
+
+                self.update_stats()
+
+            self.sync_bitmap()
+
+            init_end = timer() - init_start
+            # calculating execution speed
+            if init_end != 0:
+                self.fuzzer_stats.stats['exec_per_sec'] = len(self.list_of_files) / init_end
+
+            if len(new_files) > 0:
+                self.list_of_files = self.list_of_files + new_files
+            self.fuzzer_stats.stats['iterations'] += 1.0
+            self.fuzzer_stats.stats['files_in_queue'] = len(self.list_of_files)
+
+            self.update_stats()
+            last_stats_saved_time += elapsed
+            if last_stats_saved_time > 1: # we save fuzzer stats per iteration or once per second to avoid huge stats files
+                self.save_stats()
+                last_stats_saved_time = 0
+
 
 def get_bytes_covered(virgin_bits):
     non_zeros = [x for x in virgin_bits if x != 0xFF]
     return len(non_zeros)
+
 
 def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_session, crash_bits):
     INFO(0, None, None, "Starting fuzzer %d" % i)
@@ -476,6 +474,7 @@ def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_s
                              args.determinstic_seed, crash_bits)
     fuzzer_instance.run() # never return
 
+
 def check_instrumentation(target_binary):
     with open(target_binary, 'rb') as f:
         s = f.read()
@@ -483,6 +482,7 @@ def check_instrumentation(target_binary):
     if res == -1:
         return False
     return True
+
 
 def which(program):
     def is_binary(fpath):
@@ -500,10 +500,12 @@ def which(program):
 
     return None
 
+
 def check_binary(target_binary):
     target_binary = which(target_binary)
     if target_binary is None:
         ERROR("Unable to find target binary %s" % target_binary)
+
 
 def get_available_id_for_backup(dir_name):
     id = 0
@@ -513,6 +515,7 @@ def get_available_id_for_backup(dir_name):
             return id
         id += 1
         tmp = dir_name + "_%d" % id
+
 
 def configure_dbi(dbi_name, target_binary):
     global DBI_ENGINE_PATH, DBI_TOOL_PATH, DBI_TOOL_PARAMS
@@ -546,6 +549,7 @@ def configure_dbi(dbi_name, target_binary):
     else:
         ERROR("Unknown dbi engine/option specified. Intel PIN or DynamoRIO are only supported")
 
+
 def split_files_by_count(files_list, threads_count):
     # split list of input files by fuzzer instances
     less_files = False
@@ -562,8 +566,9 @@ def split_files_by_count(files_list, threads_count):
                 break
             piece = (thread_index + i) % threads_count
             files[piece].append(file_name)
-        thread_index += i + 1
+            thread_index += i + 1
     return files
+
 
 def get_files_list(path):
     files_list = [f for f in listdir(path) if isfile(join(path, f))]  # let's process input directory
@@ -574,6 +579,7 @@ def get_files_list(path):
 
     return files_list
 
+
 def check_if_exist(files_list, path):
     for file_name in files_list:
         if file_name == "":
@@ -582,6 +588,7 @@ def check_if_exist(files_list, path):
             continue
         else:
             ERROR("File %s doesn't exist in %s" % (file_name, path))
+
 
 def allocate_files_per_jobs(args):
     if args.net_slave is not None:
@@ -607,6 +614,7 @@ def allocate_files_per_jobs(args):
         files = split_files_by_count(files_list, args.nfuzzers)
 
     return files
+
 
 def parse_args():
     parser = argparse.ArgumentParser(prog = "manul.py",
@@ -644,6 +652,7 @@ def parse_args():
         ERROR("Session restore for coverage-guided mode is not yet supported")
 
     return args
+
 
 if __name__ == "__main__":
     start = timer()
@@ -720,7 +729,7 @@ if __name__ == "__main__":
         sync_t.start()
 
     try:
-        while True: #TODO i#17: Terminate thread when user send terminate signal
+        while True:  # TODO i#17: Terminate thread when user send terminate signal
             threads_inactive = 0
             for i, t in enumerate(all_threads_handles):
                 if not t.is_alive():
@@ -731,13 +740,13 @@ if __name__ == "__main__":
                     WARNING(None, "Restoring %d fuzzer" % i)
                     files_list = files[i]
                     stats_array = all_threads_stats[i]
-                    t = multiprocessing.Process(target=run_fuzzer_instance, # trying to restore fuzzer
+                    t = multiprocessing.Process(target=run_fuzzer_instance,  # trying to restore fuzzer
                                                 args=(files_list, i, virgin_bits, args, stats_array, True))
                     t.start()
                     all_threads_handles[i] = t
 
             if sync_t is not None and not sync_t.alive():
-                WARNING(None, "Syncronized thread is not working")
+                WARNING(None, "Syncronization thread is not alive")
 
             end = timer() - start
 
