@@ -1,0 +1,9 @@
+#! /bin/bash
+# this function takes a string in version format (s.a 2.6.16) and makes it an integer (00020006001600000000)
+function digit_version { echo $1 | awk -F. '{ printf("%04d%04d%04d\n", $1, $2, $3); }'; }
+
+#echo  $(digit_version `ldd --version| egrep -o "[1-9]+\.[1-9]+(\.[0-9]*)?" | head -1`)
+#echo  $(digit_version $1)
+#now we use digit_version to compare between the current version and the given one.
+#If the libc version is Greater or Equal to the version passed as input, then print 1, else print 0.
+if [[ $(digit_version `ldd --version| egrep -o "[1-9]+\.[1-9]+(\.[0-9]*)?" | head -1`) -ge $(digit_version $1) ]]; then echo 1; else echo 0; fi

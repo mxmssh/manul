@@ -393,7 +393,8 @@ options_init(client_id_t id, int argc, const char *argv[])
             options.target_modules = (target_module_t *)dr_global_alloc(sizeof(target_module_t));
             options.target_modules->next = target_modules;
             strncpy(options.target_modules->module_name, argv[++i], BUFFER_SIZE_ELEMENTS(options.target_modules->module_name));
-            dr_fprintf(winafl_data.log, "target module: %s\n", options.target_modules->module_name);
+            if (options.debug_mode)
+                dr_fprintf(winafl_data.log, "target module: %s\n", options.target_modules->module_name);
         }
         else if (strcmp(token, "-verbose") == 0) {
             USAGE_CHECK((i + 1) < argc, "missing -verbose number");

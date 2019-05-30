@@ -571,6 +571,8 @@ def configure_dbi(dbi_name, target_binary):
                     continue
                 dbi_tool_params += "-coverage_module %s " % target_lib
     elif dbi_name == "pin": # TODO i#13: handle when dbi_tool_libs is None
+        if os.name == "nt":
+            ERROR("Intel PIN DBI engine is not supported on Windows")
         if dbi_tool_libs is not None:
             # adding desired libs to instrument
             fd = open("dbi_config", 'w')
