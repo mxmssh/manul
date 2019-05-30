@@ -15,7 +15,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-
+import sys
 import os
 from manul_utils import *
 import time
@@ -23,7 +23,7 @@ import datetime
 from datetime import timedelta
 
 DEBUG_PRINT = False
-
+#TODO: colors doesn't work in Windows
 def print_logo():
     print(r"""88EDdWkmWZMEg8QBQQQ#QQQB#QQQ8QDO0OZdIkomZPH0d5ZHyWOgQQgg8g0600$R06dMEZaH3s3zyhoH
     9DERGzj3sIkhM9gQBBQQgQB8Q8ZkxIj5R98Myue$g8BQQd6g0E5OD66E8QQQQQQ$g$gQ$90QQBB8gEDE

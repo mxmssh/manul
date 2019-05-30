@@ -41,17 +41,22 @@ else:
     string_types = basestring,
     xrange = xrange
 
-
 class Fuzzer:
     def __init__(self, list_of_files, fuzzer_id, virgin_bits_global, input_path, output_path, is_dumb_mode,
                  target_binary, timeout, stats_array, enable_logging, restore_session, dbi_name, determenistic,
-                 crash_bits):
+                 crash_bits, dbi_setup): # TODO: shrink args in structure
         # local fuzzer config
         global SHM_SIZE
         self.SHM_SIZE = SHM_SIZE
         self.CALIBRATIONS_COUNT = 7
         self.SHM_ENV_VAR = "__AFL_SHM_ID"
         self.dbi = dbi_name
+
+        if dbi_setup != None:
+
+            self.dbi_engine_path = dbi_setup[0]
+            self.dbi_tool_path = dbi_setup[1]
+            self.dbi_tool_params = dbi_setup[2]
 
         self.list_of_files = list_of_files
         self.fuzzer_id = fuzzer_id
@@ -171,19 +176,47 @@ class Fuzzer:
             if self.dbi == "pin":
                 dbi_tool_opt = "-t"
             timeout_long = self.timeout * 30  # DBI introduce overhead ~ x30
-            timeout_prefix = ("timeout %ds" % timeout_long)
+            timeout_prefix = ""#("timeout %ds" % timeout_long) # TODO: timeout sucks
             binary_path = "".join(self.target_binary_path)
             binary_path = binary_path.replace("@@", target_file_path)
 
             final_string = "%s %s %s %s %s -- %s" % (
-                            timeout_prefix, DBI_ENGINE_PATH, dbi_tool_opt, DBI_TOOL_PATH, DBI_TOOL_PARAMS, binary_path)
+                            timeout_prefix, self.dbi_engine_path, dbi_tool_opt,
+                            self.dbi_tool_path,  self.dbi_tool_params, binary_path)
         else:
-            final_string = ("timeout %ds " % self.timeout) + "".join(self.target_binary_path)
+            final_string = "".join(self.target_binary_path) # TODO: timeout should be replaced with something better
             final_string = final_string.replace("@@", target_file_path)
 
         return final_string
 
+    def setup_shm_win(self):
+        FILE_MAP_ALL_ACCESS = 0xF001F
+        INVALID_HANDLE_VALUE = 0xFFFFFFFF
+        PAGE_READWRITE = 0x04
+        sh_name = "%s_%s" % (str(int(round(time.time()))), self.fuzzer_id)
+        szName = c_char_p(sh_name)
+
+        hMapObject = windll.kernel32.CreateFileMappingA(INVALID_HANDLE_VALUE, None,
+                                                        PAGE_READWRITE, 0, self.SHM_SIZE,
+                                                        szName)
+        if hMapObject == 0:
+            ERROR("Could not open file mapping object")
+
+        pBuf = windll.kernel32.MapViewOfFile(hMapObject, FILE_MAP_ALL_ACCESS, 0, 0,
+                                             self.SHM_SIZE)
+        if pBuf == 0:
+            ERROR("Could not map view of file")
+
+        INFO(0, None, self.log_file, "Setting up shared mem %s for fuzzer:%d" % (sh_name,
+             self.fuzzer_id))
+        os.environ[self.SHM_ENV_VAR] = sh_name
+
+        return pBuf
+
     def setup_shm(self):
+        if os.name == 'nt':
+            return self.setup_shm_win()
+
         IPC_PRIVATE = 0
 
         try:
@@ -400,9 +433,9 @@ class Fuzzer:
                 try:
                     subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True) # run target with new input
                 except subprocess.CalledProcessError as exc:
-                    elapsed += (timer() - start)
+                    elapsed += (timer() - timer_start)
                     self.fuzzer_stats.stats['exceptions'] += 1
-                    INFO(1, None, self.log_file, "Target raised exception and returns %d error code" % exc.returncode)
+                    INFO(1, None, self.log_file, "Target raised exception and returns %d error code, and msg %s" % (exc.returncode, exc))
 
                     if self.is_critical(exc):
                         INFO(0, bcolors.BOLD + bcolors.OKGREEN, self.log_file, "New crash found by fuzzer %d" % self.fuzzer_id)
@@ -467,11 +500,11 @@ def get_bytes_covered(virgin_bits):
     return len(non_zeros)
 
 
-def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_session, crash_bits):
+def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_session, crash_bits, dbi_setup):
     INFO(0, None, None, "Starting fuzzer %d" % i)
     fuzzer_instance = Fuzzer(files_list, i, virgin_bits, args.input, args.output, args.simple_mode, args.target_binary,
                              args.timeout, stats_array, args.logging_enable, restore_session, args.dbi,
-                             args.determinstic_seed, crash_bits)
+                             args.determinstic_seed, crash_bits, dbi_setup)
     fuzzer_instance.run() # never return
 
 
@@ -502,8 +535,8 @@ def which(program):
 
 
 def check_binary(target_binary):
-    target_binary = which(target_binary)
-    if target_binary is None:
+    binary_path = which(target_binary)
+    if binary_path is None:
         ERROR("Unable to find target binary %s" % target_binary)
 
 
@@ -518,26 +551,25 @@ def get_available_id_for_backup(dir_name):
 
 
 def configure_dbi(dbi_name, target_binary):
-    global DBI_ENGINE_PATH, DBI_TOOL_PATH, DBI_TOOL_PARAMS
-    DBI_ENGINE_PATH = os.getenv('DBI_ROOT')
-    DBI_TOOL_PATH = os.getenv('DBI_CLIENT_ROOT')
+    dbi_engine_path = os.getenv('DBI_ROOT')
+    dbi_tool_path = os.getenv('DBI_CLIENT_ROOT')
     dbi_tool_libs = os.getenv('DBI_CLIENT_LIBS')
 
-    if DBI_ENGINE_PATH is None or DBI_TOOL_PATH is None:
+    if dbi_engine_path is None or dbi_tool_path is None:
         ERROR("DBI_ROOT and/or DBI_CLIENT_ROOT paths not specified, unable to execute manul")
 
-    check_binary(DBI_ENGINE_PATH)
-    check_binary(DBI_TOOL_PATH)
+    check_binary(dbi_engine_path)
+    check_binary(dbi_tool_path)
 
-    DBI_TOOL_PARAMS = ""
+    dbi_tool_params = ""
     if dbi_name == "dynamorio":
         #TODO i#12: corner case is not handled here
-        DBI_TOOL_PARAMS += "-coverage_module %s " % ntpath.basename(target_binary)
+        dbi_tool_params += "-coverage_module %s " % ntpath.basename(target_binary)
         if dbi_tool_libs is not None:
             for target_lib in dbi_tool_libs.split(","):
                 if target_lib == "":
                     continue
-                DBI_TOOL_PARAMS += "-coverage_module %s " % target_lib
+                dbi_tool_params += "-coverage_module %s " % target_lib
     elif dbi_name == "pin": # TODO i#13: handle when dbi_tool_libs is None
         if dbi_tool_libs is not None:
             # adding desired libs to instrument
@@ -545,10 +577,11 @@ def configure_dbi(dbi_name, target_binary):
             fd.write(dbi_tool_libs)
             fd.close()
             dbi_config_file_path = os.path.abspath("dbi_config")
-            DBI_TOOL_PARAMS += " -libs %s" % dbi_config_file_path
+            dbi_tool_params += " -libs %s" % dbi_config_file_path
     else:
         ERROR("Unknown dbi engine/option specified. Intel PIN or DynamoRIO are only supported")
-
+    dbi_setup = (dbi_engine_path, dbi_tool_path, dbi_tool_params)
+    return dbi_setup
 
 def split_files_by_count(files_list, threads_count):
     # split list of input files by fuzzer instances
@@ -663,10 +696,15 @@ if __name__ == "__main__":
     binary_to_check = args.target_binary[0]
     target_binary = binary_to_check.split(" ")[0] # TODO i#15: here we assume that our path to binary doesn't have spaces
 
+    dbi_setup = None
     if args.dbi is not None:
-        configure_dbi(args.dbi, target_binary)
+        dbi_setup = configure_dbi(args.dbi, target_binary)
 
     check_binary(target_binary) # check if our binary exists and is actually instrumented
+
+    #check that the fuzzer/fuzzers exist #TODO: more fuzzers will be here in future 
+    #TODO: on Windows radamsa.exe should be in the same folder as manul.py
+    #check_binary("radamsa.exe")
 
     if not args.simple_mode and args.dbi is None and not check_instrumentation(target_binary):
         ERROR("Failed to find afl's instrumentation in the target binary, try to recompile or run manul in dumb mode")
@@ -707,7 +745,7 @@ if __name__ == "__main__":
     for i, files_piece in enumerate(files):
         stats_array = multiprocessing.Array("d", stats.get_len())
         t = multiprocessing.Process(target=run_fuzzer_instance, args=(files_piece, i, virgin_bits, args, stats_array,
-                                                                      args.restore, crash_bits))
+                                                                      args.restore, crash_bits, dbi_setup))
         t.start()
         all_threads_stats.append(stats_array)
         all_threads_handles.append(t)
@@ -740,8 +778,9 @@ if __name__ == "__main__":
                     WARNING(None, "Restoring %d fuzzer" % i)
                     files_list = files[i]
                     stats_array = all_threads_stats[i]
-                    t = multiprocessing.Process(target=run_fuzzer_instance,  # trying to restore fuzzer
-                                                args=(files_list, i, virgin_bits, args, stats_array, True))
+                    t = multiprocessing.Process(target=run_fuzzer_instance,  # TODO: trying to restore fuzzing session
+                                                args=(files_list, i, virgin_bits, args, stats_array, True,
+                                                      crash_bits, dbi_tools_libs))
                     t.start()
                     all_threads_handles[i] = t
 

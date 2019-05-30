@@ -16,6 +16,7 @@
 #   limitations under the License.
 
 from collections import OrderedDict
+import os
 
 '''
 manul config options
@@ -24,9 +25,6 @@ STATS_FREQUENCY = 3
 SHM_SIZE = 65535
 IGNORE_ABORT = True
 UPDATE = True
-DBI_ENGINE_PATH = None
-DBI_TOOL_PATH = None
-DBI_TOOL_PARAMS = None
 
 class FuzzerStats:
     def __init__(self):
@@ -46,16 +44,28 @@ class FuzzerStats:
     def get_len(self):
         return len(self.stats)
 
-class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    GRAY = '\033[30m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+if os.name == 'nt':
+    class bcolors:
+        HEADER = ''
+        OKBLUE = ''
+        OKGREEN = ''
+        WARNING = ''
+        GRAY = ''
+        FAIL = ''
+        ENDC = ''
+        BOLD = ''
+        UNDERLINE = ''
+else:
+    class bcolors:
+        HEADER = '\033[95m'
+        OKBLUE = '\033[94m'
+        OKGREEN = '\033[92m'
+        WARNING = '\033[93m'
+        GRAY = '\033[30m'
+        FAIL = '\033[91m'
+        ENDC = '\033[0m'
+        BOLD = '\033[1m'
+        UNDERLINE = '\033[4m'
 
 
 def convert_bitmap_from_string(data):
