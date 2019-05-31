@@ -63,8 +63,10 @@ class Command(object): # TODO: create Windows version of that
 
         thread.join(timeout)
         if thread.is_alive():
-            INFO(1, None, None, 'Timeout. Killing the process')
-            os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            pgid = os.getpgid(self.process.pid)
+            INFO(1, None, None, 'Timeout. Killing the process group %d, %d' % (self.process.pid, pgid))
+            os.system("kill -9 -%d" % pgid)
+            #os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
             thread.join()
 
         return self.process.returncode, self.err
