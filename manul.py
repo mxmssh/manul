@@ -29,6 +29,7 @@ import printing
 import threading
 from printing import *
 from manul_utils import *
+from manul_win_utils import *
 import manul_network
 import random
 
@@ -406,16 +407,28 @@ class Fuzzer:
 
     def generate_new_name(self, file_name):
         iteration = int(round(self.fuzzer_stats.stats['iterations']))
-        if file_name.startswith("raiter"): # raiterDateTime:FuzzerId:iteration_original_name
+        if file_name.startswith("crash"): # crash_DateTime_FuzzerId_iteration_original_name
             base_name = file_name[file_name.find("_")+1:]
             file_name = base_name
 
         now = int(round(time.time()))
-        return "raiter%d:%d:%d_%s" % (now, self.fuzzer_id, iteration, file_name)
+        return "crash_%d_%d_%d_%s" % (now, self.fuzzer_id, iteration, file_name)
+
+    def is_critical_win(self, exception_code):
+
+        if exception_code >= EXCEPTION_FIRST_CRITICAL_CODE and \
+           exception_code < EXCEPTION_LAST_CRITICAL_CODE:
+            return True
+
+        return False;
 
     def is_critical(self, err_str, err_code):
         if "Sanitizer" in err_str or "SIGSEGV" in err_str or "Segmentation fault" in err_str:
             return True
+
+        if os.name == 'nt':
+            return self.is_critical_win(err_code)
+
         if err_code > 128:  # this is the way to check for errors in no-ASAN mode
             if IGNORE_ABORT and err_code == (128 + 6): # signal 6 is SIABRT
                 return False
@@ -478,7 +491,7 @@ class Fuzzer:
 
                 if exc_code != 0:
                     self.fuzzer_stats.stats['exceptions'] += 1
-                    INFO(1, None, self.log_file, "Target raised exception and returns %d error code" % (exc_code))
+                    INFO(1, None, self.log_file, "Target raised exception and returns 0x%x error code" % (exc_code))
 
                     if self.is_critical(err_output, exc_code):
                         INFO(0, bcolors.BOLD + bcolors.OKGREEN, self.log_file, "New crash found by fuzzer %d" % self.fuzzer_id)
