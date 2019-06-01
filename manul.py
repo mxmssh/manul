@@ -46,6 +46,8 @@ import subprocess, threading
 import signal
 #TODO: python3 doesn't work in Linux (works fine in Windows) python2 doesn't work on WIndows
 
+UPDATE_FREQ = 1000000
+
 class Command(object):
     def __init__(self, cmd):
         self.cmd = cmd
@@ -171,6 +173,7 @@ class Fuzzer:
     
         self.enable_logging = enable_logging
         self.log_file = None
+        self.sync_bitmap_freq = 0x0
         if self.enable_logging:
             self.log_file = open(self.output_path + "/fuzzer_log", 'a')
     
@@ -184,6 +187,9 @@ class Fuzzer:
                     self.virgin_bits[i] = self.global_map[i]
 
     def sync_bitmap(self):
+        self.sync_bitmap_freq += 1
+        if (self.sync_bitmap_freq % UPDATE_FREQ) != 0:
+            return
         if self.is_dumb_mode:
             return
         for i in range(0, self.SHM_SIZE):
