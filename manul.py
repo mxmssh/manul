@@ -194,7 +194,7 @@ class Fuzzer:
         INVALID_HANDLE_VALUE = 0xFFFFFFFF
         PAGE_READWRITE = 0x04
         sh_name = "%s_%s" % (str(int(round(time.time()))), self.fuzzer_id)
-        szName = c_char_p(sh_name)
+        szName = c_char_p(sh_name.encode("utf-8"))
 
         hMapObject = windll.kernel32.CreateFileMappingA(INVALID_HANDLE_VALUE, None,
                                                         PAGE_READWRITE, 0, self.SHM_SIZE,
