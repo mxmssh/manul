@@ -41,6 +41,36 @@ else:
     string_types = basestring,
     xrange = xrange
 
+import subprocess, threading
+import signal
+#TODO: python3 doesn't work in Linux (works fine in Windows) python2 doesn't work on WIndows
+
+class Command(object): # TODO: create Windows version of that
+    def __init__(self, cmd):
+        self.cmd = cmd
+        self.process = None
+        self.out = None
+        self.err = None
+
+    def run(self, timeout):
+        def target():
+            self.process = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                            preexec_fn=os.setsid)
+            self.out, self.err = self.process.communicate()
+
+        thread = threading.Thread(target=target)
+        thread.start()
+
+        thread.join(timeout)
+        if thread.is_alive():
+            pgid = os.getpgid(self.process.pid)
+            INFO(1, None, None, 'Timeout. Killing the process group %d, %d' % (self.process.pid, pgid))
+            os.system("kill -9 -%d" % pgid)
+            #os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            thread.join()
+
+        return self.process.returncode, self.err
+
 class Fuzzer:
     def __init__(self, list_of_files, fuzzer_id, virgin_bits_global, input_path, output_path, is_dumb_mode,
                  target_binary, timeout, stats_array, enable_logging, restore_session, dbi_name, determenistic,
@@ -175,16 +205,14 @@ class Fuzzer:
             dbi_tool_opt = "-c"
             if self.dbi == "pin":
                 dbi_tool_opt = "-t"
-            timeout_long = self.timeout * 30  # DBI introduce overhead ~ x30
-            timeout_prefix = ""#("timeout %ds" % timeout_long) # TODO: timeout sucks
+
             binary_path = "".join(self.target_binary_path)
             binary_path = binary_path.replace("@@", target_file_path)
 
-            final_string = "%s %s %s %s %s -- %s" % (
-                            timeout_prefix, self.dbi_engine_path, dbi_tool_opt,
-                            self.dbi_tool_path,  self.dbi_tool_params, binary_path)
+            final_string = "%s %s %s %s -- %s" % (self.dbi_engine_path, dbi_tool_opt, self.dbi_tool_path,
+                                                  self.dbi_tool_params, binary_path)
         else:
-            final_string = "".join(self.target_binary_path) # TODO: timeout should be replaced with something better
+            final_string = "".join(self.target_binary_path)
             final_string = final_string.replace("@@", target_file_path)
 
         return final_string
@@ -253,16 +281,15 @@ class Fuzzer:
 
             INFO(1, bcolors.BOLD, self.log_file, "Running %s" % cmd)
 
-            try:
-                res = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
-            except subprocess.CalledProcessError as exc:
+            command = Command(cmd)
+            err_code, err_output = command.run(timeout=self.timeout)
+            if err_code != 0:
                 INFO(1, None, self.log_file, "Initial input %s triggers exception in the target" % file_name)
-                if self.is_critical(exc):
+                if self.is_critical(err_output, err_code):
                     WARNING(self.log_file, "Initial input %s leads target to crash (did you disable leak sanitizer?). Enable -d or -l to check actual output" % file_name)
-                    INFO(1, None, self.log_file, exc.output)
-                elif self.is_problem_with_config(exc):
+                    INFO(1, None, self.log_file, err_output)
+                elif self.is_problem_with_config(err_code, err_output):
                     WARNING(self.log_file, "Problematic file %s" % file_name)
-                res = exc.output
 
             trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE)
 
@@ -327,12 +354,14 @@ class Fuzzer:
             memset(self.trace_bits, 0x0, SHM_SIZE)
 
             cmd = self.prepare_cmd_to_run(self.queue_path + "/" + file_name)
-            try:
-                INFO(1, None, self.log_file, cmd)
-                res = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True) # running our target again
-            except subprocess.CalledProcessError as exc:
+
+            INFO(1, None, self.log_file, cmd)
+            command = Command(cmd)
+            err_code, err_output = command.run(timeout=self.timeout)
+
+            if err_code > 0:
                 INFO(1, None, self.log_file, "Error is not expected during calibration, something wrong with %s" % file_name)
-                INFO(1, None, self.log_file, exc)
+                INFO(1, None, self.log_file, err_output)
 
             trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
 
@@ -354,10 +383,10 @@ class Fuzzer:
         for i, (k,v) in enumerate(self.fuzzer_stats.stats.items()):
             self.stats_array[i] = v
 
-    def is_problem_with_config(self, exc):
-        if exc.returncode == 127 or exc.returncode == 126: # command not found or permissions
-            ERROR("Thread %d unable to execute target. Bash return %s" % (self.fuzzer_id, exc.output))
-        elif exc.returncode == 124: #timeout
+    def is_problem_with_config(self, exc_code, err_output):
+        if exc_code == 127 or exc_code == 126: # command not found or permissions
+            ERROR("Thread %d unable to execute target. Bash return %s" % (self.fuzzer_id, err_output))
+        elif exc_code == 124: #timeout
             WARNING(self.log_file, "Target failed to finish execution within given timeout, try to increase default timeout")
             return True
         return False
@@ -371,12 +400,11 @@ class Fuzzer:
         now = int(round(time.time()))
         return "raiter%d:%d:%d_%s" % (now, self.fuzzer_id, iteration, file_name)
 
-    def is_critical(self, exc):
-        output = str(exc)
-        if "Sanitizer" in output or "SIGSEGV" in output:
+    def is_critical(self, err_str, err_code):
+        if "Sanitizer" in err_str or "SIGSEGV" in err_str or "Segmentation fault" in err_str:
             return True
-        if exc.returncode > 128:  # this is the way to check for errors in no-ASAN mode
-            if IGNORE_ABORT and exc.returncode == (128 + 6): # signal 6 is SIABRT
+        if err_code > 128:  # this is the way to check for errors in no-ASAN mode
+            if IGNORE_ABORT and err_code == (128 + 6): # signal 6 is SIABRT
                 return False
             return True
         return False
@@ -430,14 +458,16 @@ class Fuzzer:
                 cmd = self.prepare_cmd_to_run(full_output_file_path)
                 INFO(1, None, self.log_file, "Running %s" % cmd)
                 timer_start = timer()
-                try:
-                    subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True) # run target with new input
-                except subprocess.CalledProcessError as exc:
-                    elapsed += (timer() - timer_start)
-                    self.fuzzer_stats.stats['exceptions'] += 1
-                    INFO(1, None, self.log_file, "Target raised exception and returns %d error code, and msg %s" % (exc.returncode, exc))
 
-                    if self.is_critical(exc):
+                command = Command(cmd)
+                exc_code, err_output = command.run(timeout=self.timeout)
+                elapsed += (timer() - timer_start)
+
+                if exc_code != 0:
+                    self.fuzzer_stats.stats['exceptions'] += 1
+                    INFO(1, None, self.log_file, "Target raised exception and returns %d error code" % (exc_code))
+
+                    if self.is_critical(err_output, exc_code):
                         INFO(0, bcolors.BOLD + bcolors.OKGREEN, self.log_file, "New crash found by fuzzer %d" % self.fuzzer_id)
                         self.fuzzer_stats.stats["last_crash_time"] = time.time()
 
@@ -455,10 +485,8 @@ class Fuzzer:
 
                         crash_found = True
 
-                    elif self.is_problem_with_config(exc):
+                    elif self.is_problem_with_config(exc_code, err_output):
                         WARNING(self.log_file, "Problematic file: %s" % file_name)
-
-                elapsed += (timer() - timer_start)
 
                 if not crash_found and not self.is_dumb_mode:
                     # Reading the coverage
@@ -502,6 +530,9 @@ def get_bytes_covered(virgin_bits):
 
 def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_session, crash_bits, dbi_setup):
     INFO(0, None, None, "Starting fuzzer %d" % i)
+    if args.dbi:
+        args.timeout *= 30 #DBI introduce ~30x overhead
+
     fuzzer_instance = Fuzzer(files_list, i, virgin_bits, args.input, args.output, args.simple_mode, args.target_binary,
                              args.timeout, stats_array, args.logging_enable, restore_session, args.dbi,
                              args.determinstic_seed, crash_bits, dbi_setup)
@@ -550,7 +581,7 @@ def get_available_id_for_backup(dir_name):
         tmp = dir_name + "_%d" % id
 
 
-def configure_dbi(dbi_name, target_binary):
+def configure_dbi(dbi_name, target_binary, is_debug):
     dbi_engine_path = os.getenv('DBI_ROOT')
     dbi_tool_path = os.getenv('DBI_CLIENT_ROOT')
     dbi_tool_libs = os.getenv('DBI_CLIENT_LIBS')
@@ -570,7 +601,11 @@ def configure_dbi(dbi_name, target_binary):
                 if target_lib == "":
                     continue
                 dbi_tool_params += "-coverage_module %s " % target_lib
+        if is_debug:
+            dbi_tool_params += "-debug"
     elif dbi_name == "pin": # TODO i#13: handle when dbi_tool_libs is None
+        if os.name == "nt":
+            ERROR("Intel PIN DBI engine is not supported on Windows")
         if dbi_tool_libs is not None:
             # adding desired libs to instrument
             fd = open("dbi_config", 'w')
@@ -698,7 +733,7 @@ if __name__ == "__main__":
 
     dbi_setup = None
     if args.dbi is not None:
-        dbi_setup = configure_dbi(args.dbi, target_binary)
+        dbi_setup = configure_dbi(args.dbi, target_binary, args.debug)
 
     check_binary(target_binary) # check if our binary exists and is actually instrumented
 

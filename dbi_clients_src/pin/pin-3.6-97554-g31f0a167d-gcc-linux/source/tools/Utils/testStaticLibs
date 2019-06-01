@@ -1,0 +1,22 @@
+#! /bin/bash
+
+NO_MORE_STATIC_LIB_OPEN_SUSE_VER=13.0.0
+NO_MORE_STATIC_LIB_SLES_VER=12.0.0
+
+# this function takes a string in version format (s.a 2.6.16) and makes it an integer (00020006001600000000)
+function digit_version { echo $1 | awk -F. '{ printf("%04d%04d%04d\n", $1, $2, $3); }'; }
+
+dist_name_version="$(lsb_release -irs)"
+version="$(echo $dist_name_version| awk '{print $3}')"
+name="$(echo $dist_name_version| awk '{print $1 " " $2}')"
+
+# uncomment for debug
+# echo dist_name_version=$dist_name_version
+# echo name=$name
+# echo version=$version \(digit: $(digit_version $version)\)
+
+case $name in
+    "SUSE LINUX" ) if [[ $(digit_version $version) -lt $(digit_version $NO_MORE_STATIC_LIB_SLES_VER) ]]; then echo 0; else echo 1; fi;;
+    "openSUSE project" ) if [[ $(digit_version $version) -lt $(digit_version $NO_MORE_STATIC_LIB_OPEN_SUSE_VER) ]]; then echo 0; else echo 1; fi;;
+    * ) echo 0;;
+esac
