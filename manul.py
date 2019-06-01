@@ -45,17 +45,29 @@ import subprocess, threading
 import signal
 #TODO: python3 doesn't work in Linux (works fine in Windows) python2 doesn't work on WIndows
 
-class Command(object): # TODO: create Windows version of that
+class Command(object):
     def __init__(self, cmd):
         self.cmd = cmd
         self.process = None
         self.out = None
         self.err = None
 
+    def kill_nt(self, pid):
+        os.system("taskkill /F /t /PID %d" % pid)
+
+    def kill_unix(self, pid):
+        pgid = os.getpgid(pid)
+        INFO(1, None, None, 'Timeout. Killing the process group %d, %d' % (pid, pgid))
+        os.system("kill -9 -%d" % pgid)
+        #os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+
     def run(self, timeout):
         def target():
-            self.process = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                            preexec_fn=os.setsid)
+            if os.name == 'nt':
+                self.process = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            else:
+                self.process = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                                preexec_fn=os.setsid)
             self.out, self.err = self.process.communicate()
 
         thread = threading.Thread(target=target)
@@ -63,12 +75,13 @@ class Command(object): # TODO: create Windows version of that
 
         thread.join(timeout)
         if thread.is_alive():
-            pgid = os.getpgid(self.process.pid)
-            INFO(1, None, None, 'Timeout. Killing the process group %d, %d' % (self.process.pid, pgid))
-            os.system("kill -9 -%d" % pgid)
-            #os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
+            if os.name == 'nt':
+                self.kill_nt(self.process.pid)
+            else:
+                self.kill_unix(self.process.pid)
             thread.join()
-
+        if isinstance(self.err, (bytes, bytearray)):
+            self.err = self.err.decode("utf-8", 'replace')
         return self.process.returncode, self.err
 
 class Fuzzer:
@@ -494,13 +507,13 @@ class Fuzzer:
                     ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits) # we are not ready to update coverage at this stage due to volatile bytes
                     if ret == 2:
                         INFO(1, None, self.log_file, "Input %s produces new coverage, calibrating" % file_name)
-                    if self.calibrate_test_case(mutated_name) == 2:
-                        self.fuzzer_stats.stats['new_paths'] += 1
-                        self.fuzzer_stats.stats['last_path_time'] = timer()
-                        INFO(1, None, self.log_file, "Calibration finished sucessfully. Saving new finding")
-                        new_coverage_file_name = self.generate_new_name(file_name)
-                        shutil.copy(full_output_file_path, self.queue_path + "/" + new_coverage_file_name)
-                        new_files.append((1, new_coverage_file_name))
+                        if self.calibrate_test_case(mutated_name) == 2:
+                            self.fuzzer_stats.stats['new_paths'] += 1
+                            self.fuzzer_stats.stats['last_path_time'] = timer()
+                            INFO(1, None, self.log_file, "Calibration finished sucessfully. Saving new finding")
+                            new_coverage_file_name = self.generate_new_name(file_name)
+                            shutil.copy(full_output_file_path, self.queue_path + "/" + new_coverage_file_name)
+                            new_files.append((1, new_coverage_file_name))
 
                 self.update_stats()
 
@@ -529,6 +542,7 @@ def get_bytes_covered(virgin_bits):
 
 
 def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_session, crash_bits, dbi_setup):
+    printing.DEBUG_PRINT = args.debug # FYI, multiprocessing causes global vars to be reinitialized.
     INFO(0, None, None, "Starting fuzzer %d" % i)
     if args.dbi:
         args.timeout *= 30 #DBI introduce ~30x overhead
