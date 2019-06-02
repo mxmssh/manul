@@ -15,8 +15,9 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 import os
+import printing
 
 '''
 manul config options
@@ -66,6 +67,32 @@ else:
         ENDC = '\033[0m'
         BOLD = '\033[1m'
         UNDERLINE = '\033[4m'
+
+
+def parse_config(file_path):
+    content = open(file_path, 'r').readlines()
+    additional_cmd = ""
+    args_dict = dict()
+    for i, line in enumerate(content):
+        line = line.replace("\n", "")
+        if line.startswith("#") or len(line) <= 1: # comments or empty lines
+            continue
+        line = line.replace(" ", "")
+        if line.count("=") != 1:
+            printing.ERROR("Wrong config format at line %d:%s, exiting" % (i, line))
+
+        line = line.split("=") # [arg_name, value]
+        # parse Bool|Number|String
+        value = line[1]
+        if value == 'True':
+            additional_cmd += "--%s " % (line[0])
+        elif value == 'None' or value == 'False':
+            continue
+        else:
+            additional_cmd += "--%s %s " % (line[0], value)
+
+    additional_cmd = additional_cmd[:-1]
+    return additional_cmd
 
 
 def convert_bitmap_from_string(data):

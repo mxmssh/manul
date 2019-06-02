@@ -46,8 +46,6 @@ import subprocess, threading
 import signal
 #TODO: python3 doesn't work in Linux (works fine in Windows) python2 doesn't work on WIndows
 
-UPDATE_FREQ = 1000000
-
 class Command(object):
     def __init__(self, cmd):
         self.cmd = cmd
@@ -90,7 +88,7 @@ class Command(object):
 class Fuzzer:
     def __init__(self, list_of_files, fuzzer_id, virgin_bits_global, input_path, output_path, is_dumb_mode,
                  target_binary, timeout, stats_array, enable_logging, restore_session, dbi_name, determenistic,
-                 crash_bits, dbi_setup): # TODO: shrink args in structure
+                 crash_bits, dbi_setup, sync_freq): # TODO: shrink args in structure
         # local fuzzer config
         global SHM_SIZE
         self.SHM_SIZE = SHM_SIZE
@@ -111,21 +109,21 @@ class Fuzzer:
 
         self.global_map = virgin_bits_global
         self.crash_bits = crash_bits  # happens not too often
-    
+
         self.timeout = timeout
         self.stats_array = stats_array
         self.restore = restore_session
-    
+
         self.determenistic = determenistic
         if self.determenistic:
             random.seed(a=self.fuzzer_id)
-    
+
         # creating output dir structure
         self.output_path = output_path + "/%d" % fuzzer_id
         self.queue_path = self.output_path + "/queue"
         self.crashes_path = self.output_path + "/crashes"
         self.unique_crashes_path = self.crashes_path + "/unique"
-    
+
         if not self.restore:
             try:
                 os.mkdir(self.output_path)
@@ -143,17 +141,17 @@ class Fuzzer:
                 os.mkdir(self.unique_crashes_path)
             except:
                 ERROR("Failed to create required output dir structure (unique crashes)")
-    
+
         self.is_dumb_mode = is_dumb_mode
         self.input_path = input_path
         self.target_binary_path = target_binary # and its arguments
-    
+
         self.fuzzer_stats = FuzzerStats()
         self.stats_file = None
         if self.restore:
             if not isfile(self.output_path + "/fuzzer_stats"):
                 ERROR("Fuzzer stats file doesn't exist. Make sure your output is actual working dir of manul")
-    
+
             self.stats_file = open(self.output_path + "/fuzzer_stats", 'r')
             content = self.stats_file.readlines()
             line = None
@@ -161,25 +159,28 @@ class Fuzzer:
                 pass
             if line is None:
                 ERROR("Failed to restore fuzzer %d from stats. Invalid fuzzeR_stats format" % self.fuzzer_id)
-    
+
             last = line[:-2] # skipping last symbol space and \n
             INFO(0, None, None, "Restoring last stats %s" % last)
             self.stats_file.close()
             self.restore_session(last)
-    
+
             self.stats_file = open(self.output_path + "/fuzzer_stats", 'a')
         else:
             self.stats_file = open(self.output_path + "/fuzzer_stats", 'w')
-    
+
         self.enable_logging = enable_logging
         self.log_file = None
-        self.sync_bitmap_freq = 0x0
+
+        self.user_sync_freq = sync_freq
+        self.sync_bitmap_freq = -1
+
         if self.enable_logging:
             self.log_file = open(self.output_path + "/fuzzer_log", 'a')
-    
+
         if not self.is_dumb_mode:
             self.trace_bits = self.setup_shm()
-    
+
             for i in range(0, self.SHM_SIZE):
                 if self.virgin_bits[i] != 0xFF:
                     self.global_map[i] = self.virgin_bits[i]
@@ -188,7 +189,7 @@ class Fuzzer:
 
     def sync_bitmap(self):
         self.sync_bitmap_freq += 1
-        if (self.sync_bitmap_freq % UPDATE_FREQ) != 0:
+        if (self.sync_bitmap_freq % self.user_sync_freq) != 0:
             return
         if self.is_dumb_mode:
             return
@@ -316,7 +317,7 @@ class Fuzzer:
             # count non-zero bytes just to check that instrumentation actually works
             non_zeros = [x for x in trace_bits_as_str if x != 0x0]
             if len(non_zeros) == 0:
-                INFO(1, None, self.log_file, "Output from target %s" % res)
+                INFO(1, None, self.log_file, "Output from target %s" % err_output)
                 ERROR("%s doesn't cover any path in the target, Make sure the binary is actually instrumented" % file_name)
 
             ret = self.has_new_bits(trace_bits_as_str, True, list(), self.virgin_bits)
@@ -568,16 +569,16 @@ def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_s
 
     fuzzer_instance = Fuzzer(files_list, i, virgin_bits, args.input, args.output, args.simple_mode, args.target_binary,
                              args.timeout, stats_array, args.logging_enable, restore_session, args.dbi,
-                             args.determinstic_seed, crash_bits, dbi_setup)
+                             args.determinstic_seed, crash_bits, dbi_setup, args.sync_freq)
     fuzzer_instance.run() # never return
 
 
 def check_instrumentation(target_binary):
     with open(target_binary, 'rb') as f:
         s = f.read()
-    res = s.find("__AFL_SHM_ID")
-    if res == -1:
-        return False
+        res = s.find(b"__AFL_SHM_ID")
+        if res == -1:
+            return False
     return True
 
 
@@ -614,10 +615,10 @@ def get_available_id_for_backup(dir_name):
         tmp = dir_name + "_%d" % id
 
 
-def configure_dbi(dbi_name, target_binary, is_debug):
-    dbi_engine_path = os.getenv('DBI_ROOT')
-    dbi_tool_path = os.getenv('DBI_CLIENT_ROOT')
-    dbi_tool_libs = os.getenv('DBI_CLIENT_LIBS')
+def configure_dbi(args, target_binary, is_debug):
+    dbi_engine_path = args.dbi_root
+    dbi_tool_path = args.dbi_client_root
+    dbi_tool_libs = args.dbi_client_libs
 
     if dbi_engine_path is None or dbi_tool_path is None:
         ERROR("DBI_ROOT and/or DBI_CLIENT_ROOT paths not specified, unable to execute manul")
@@ -626,7 +627,7 @@ def configure_dbi(dbi_name, target_binary, is_debug):
     check_binary(dbi_tool_path)
 
     dbi_tool_params = ""
-    if dbi_name == "dynamorio":
+    if args.dbi == "dynamorio":
         #TODO i#12: corner case is not handled here
         dbi_tool_params += "-coverage_module %s " % ntpath.basename(target_binary)
         if dbi_tool_libs is not None:
@@ -636,7 +637,7 @@ def configure_dbi(dbi_name, target_binary, is_debug):
                 dbi_tool_params += "-coverage_module %s " % target_lib
         if is_debug:
             dbi_tool_params += "-debug"
-    elif dbi_name == "pin": # TODO i#13: handle when dbi_tool_libs is None
+    elif args.dbi == "pin": # TODO i#13: handle when dbi_tool_libs is None
         if os.name == "nt":
             ERROR("Intel PIN DBI engine is not supported on Windows")
         if dbi_tool_libs is not None:
@@ -692,16 +693,16 @@ def check_if_exist(files_list, path):
 
 
 def allocate_files_per_jobs(args):
-    if args.net_slave is not None:
-        files = manul_network.get_files_list_from_master(args.net_slave, args.nfuzzers) # ask master to provide list of files
+    if args.net_config_slave is not None:
+        files = manul_network.get_files_list_from_master(args.net_config_slave, args.nfuzzers) # ask master to provide list of files
         check_if_exist(files, args.input)
         return split_files_by_count(files, args.nfuzzers)
 
     files_list = get_files_list(args.input)
 
-    if args.net_master_path is not None:
+    if args.net_config_master is not None:
 
-        ips = manul_network.get_slaves_ips(args.net_master_path)
+        ips = manul_network.get_slaves_ips(args.net_config_master)
         slaves, total_threads_count = manul_network.get_remote_threads_count(ips) # ask slaves count and threads
         total_threads_count += args.nfuzzers
 
@@ -719,26 +720,47 @@ def allocate_files_per_jobs(args):
 
 def parse_args():
     parser = argparse.ArgumentParser(prog = "manul.py",
-                                     description = '????',
+                                     description = 'Manul - coverage-guided parallel fuzzing for native applications.',
                                      usage = '%(prog)s -i /home/user/inputs_dir -o /home/user/outputs_dir -n 40 "pdftocairo -png @@"')
     requiredNamed = parser.add_argument_group('Required parameters')
-    requiredNamed.add_argument('-i', '--input', required=True, help = "Path to directory that contains initial files for fuzzing")
-    requiredNamed.add_argument('-o', '--output', required=True, default="manul_output", help = "Path to directory where manul should save new findings and results")
+    requiredNamed.add_argument('-i', required=True, dest='input', help = "Path to directory with initial corpus")
+    requiredNamed.add_argument('-o', dest='output', required=True, default="manul_output",
+                               help = "Path to output directory")
 
-    parser.add_argument('-r', '--restore', default=False, action='store_true', help = "Restore previous session")
-    parser.add_argument('-n', '--nfuzzers', default=1, type=int, help = "Number of parallel fuzzers")
-    parser.add_argument('-x', '--determinstic_seed', default=False, action='store_true', help = "Use determenistic seed for test cases generation (radamsa)")
-    parser.add_argument('-s', '--simple', default=False, action='store_true', dest="simple_mode", help = "Run dumb fuzzing (no code instrumentation)")
-    parser.add_argument('-p', '--print_per_thread', default=False, action='store_true', dest="threads_info", help = "Print fuzzing summary per thread instead of total summary")
-    parser.add_argument('-b', '--dbi', help = "Choose DBI backend to provide coverage back to manul (dynamorio or pin)")
-    parser.add_argument('-t', '--timeout', default=10, type=int, help = "Specify timeout for target binary")
-    parser.add_argument('-z', '--net_master_path', help = "[Master option] Specify path to config file with a list of IP:port addresses")
-    parser.add_argument('-c', '--net_slave', help="[Slave option] specify IP and port to listen for connection from master (e.g. 0.0.0.0:1337)")
-    parser.add_argument('-d', '--debug', default=False, action='store_true', help = "Run in debug mode, print details in console")
-    parser.add_argument('-m', '--manul_logo', default=False, action='store_true', help = "Print manul ASCII logo")
-    parser.add_argument('-l', '--logging_enable', default=False, action='store_true', help = "Save debug messages to log files (one per thread)")
+
+    parser.add_argument('-n', default=1, type=int, dest='nfuzzers', help = "Number of parallel fuzzers")
+    parser.add_argument('-s', default=False, action='store_true', dest="simple_mode",
+                        help = "Run dumb fuzzing (no code instrumentation)")
+    parser.add_argument('-c', default="manul.config", dest = "config",
+                        help = "Path to config file with additional options (see manul.config)")
+    parser.add_argument('-r', default=False, action='store_true', dest = "restore", help = "Restore previous session")
+
+    # this options should be specified through config file and hidden
+    parser.add_argument('--determinstic_seed', default=False, action='store_true', help = argparse.SUPPRESS)
+    parser.add_argument('--print_per_thread', default=False, action='store_true', dest="threads_info", help = argparse.SUPPRESS)
+    parser.add_argument('--dbi', default = None, help = argparse.SUPPRESS)
+    parser.add_argument('--dbi_root', help = argparse.SUPPRESS)
+    parser.add_argument('--dbi_client_root', help = argparse.SUPPRESS)
+    parser.add_argument('--dbi_client_libs', help = argparse.SUPPRESS)
+    parser.add_argument('--timeout', default=10, type=int, help = argparse.SUPPRESS)
+    parser.add_argument('--net_config_master', help = argparse.SUPPRESS)
+    parser.add_argument('--net_config_slave', help = argparse.SUPPRESS)
+    parser.add_argument('--debug', default=False, action='store_true', help = argparse.SUPPRESS)
+    parser.add_argument('--manul_logo', default=False, action='store_true', help = argparse.SUPPRESS)
+    parser.add_argument('--logging_enable', default=False, action='store_true', help = argparse.SUPPRESS)
+    parser.add_argument('--sync_freq', default=1000000, type=int, help = argparse.SUPPRESS)
+
     parser.add_argument('target_binary', nargs='*', help="The target binary and options to be executed.")
+
     args = parser.parse_args()
+    additional_args = parse_config(args.config)
+    # A little hack here. We actually adding commands from config to cmd string and parse it all together.
+    final_cmd_to_parse = "%s %s" % (" ".join(sys.argv[1:-1]), additional_args)
+
+    final_cmd_to_parse = final_cmd_to_parse.split(" ")
+    final_cmd_to_parse.append("%s" % sys.argv[-1])
+
+    args = parser.parse_args(final_cmd_to_parse)
 
     if args.manul_logo:
         printing.print_logo()
@@ -747,7 +769,7 @@ def parse_args():
         ERROR("Your forgot to specify @@ for your target. Call manul.py -h for more details")
     modes_count = 0
     if args.simple_mode and args.dbi is not None:
-        ERROR("Options mismatch. Simple mode can't be executed with DBI mode together. Use -s or -b dynamorio")
+        ERROR("Options mismatch. Simple mode can't be executed with DBI mode together (check manul.config).")
 
     if args.restore and not args.simple_mode:
         ERROR("Session restore for coverage-guided mode is not yet supported")
@@ -766,11 +788,11 @@ if __name__ == "__main__":
 
     dbi_setup = None
     if args.dbi is not None:
-        dbi_setup = configure_dbi(args.dbi, target_binary, args.debug)
+        dbi_setup = configure_dbi(args, target_binary, args.debug)
 
     check_binary(target_binary) # check if our binary exists and is actually instrumented
 
-    #check that the fuzzer/fuzzers exist #TODO: more fuzzers will be here in future 
+    #check that the fuzzer/fuzzers exist #TODO: more fuzzers will be here in future
     #TODO: on Windows radamsa.exe should be in the same folder as manul.py
     #check_binary("radamsa.exe")
 
@@ -810,6 +832,7 @@ if __name__ == "__main__":
     stats = FuzzerStats()
     all_threads_stats = list()
     all_threads_handles = list()
+
     for i, files_piece in enumerate(files):
         stats_array = multiprocessing.Array("d", stats.get_len())
         t = multiprocessing.Process(target=run_fuzzer_instance, args=(files_piece, i, virgin_bits, args, stats_array,
@@ -821,16 +844,16 @@ if __name__ == "__main__":
     INFO(0, None, None, "%d fuzzer instances sucessfully started" % args.nfuzzers)
 
     sync_t = None
-    if (args.net_slave is not None or args.net_master_path is not None) and not args.simple_mode:
+    if (args.net_config_slave is not None or args.net_config_master is not None) and not args.simple_mode:
         INFO(1, None, None, "Allocating special thread for bitmap syncronization")
         ips = None
-        if args.net_master_path is not None:
-            ips = manul_network.get_slaves_ips(args.net_master_path)
+        if args.net_config_master is not None:
+            ips = manul_network.get_slaves_ips(args.net_config_master)
             sync_t = threading.Thread(target=manul_network.sync_remote_bitmaps,
                                       args=(virgin_bits, ips))
-        elif args.net_slave is not None:
+        elif args.net_config_slave is not None:
             sync_t = threading.Thread(target=manul_network.receive_bitmap_slave,
-                                      args=(args.net_slave, virgin_bits))
+                                      args=(args.net_config_slave, virgin_bits))
         sync_t.setDaemon(True)
         sync_t.start()
 
