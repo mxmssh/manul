@@ -64,7 +64,7 @@ class Command(object):
 
     def run(self, timeout):
         def target():
-            if os.name == 'nt':
+            if sys.platform == "win32":
                 self.process = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             else:
                 self.process = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -76,7 +76,7 @@ class Command(object):
 
         thread.join(timeout)
         if thread.is_alive():
-            if os.name == 'nt':
+            if sys.platform == "win32":
                 self.kill_nt(self.process.pid)
             else:
                 self.kill_unix(self.process.pid)
@@ -263,7 +263,7 @@ class Fuzzer:
         return pBuf
 
     def setup_shm(self):
-        if os.name == 'nt':
+        if sys.platform == "win32":
             return self.setup_shm_win()
 
         IPC_PRIVATE = 0
@@ -445,7 +445,7 @@ class Fuzzer:
         if "Sanitizer" in err_str or "SIGSEGV" in err_str or "Segmentation fault" in err_str:
             return True
 
-        if os.name == 'nt':
+        if sys.platform == "win32":
             return self.is_critical_win(err_code)
         elif sys.platform == "darwin":
             return self.is_critical_mac(err_code)
