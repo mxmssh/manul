@@ -429,12 +429,26 @@ class Fuzzer:
 
         return False;
 
+    def is_critical_mac(self, exception_code):
+        print(exception_code)
+        if exception_code == 0 or exception_code == 1 or \
+           (IGNORE_ABORT and exception_code == signal.SIGABRT) or \
+           exception_code == signal.SIGKILL or \
+           exception_code == signal.SIGUSR1 or \
+           exception_code == signal.SIGUSR2 or \
+           exception_code == signal.SIGALRM or \
+           exception_code == signal.SIGCHLD:
+            return False
+        return True
+
     def is_critical(self, err_str, err_code):
         if "Sanitizer" in err_str or "SIGSEGV" in err_str or "Segmentation fault" in err_str:
             return True
 
         if os.name == 'nt':
             return self.is_critical_win(err_code)
+        elif os.name == 'posix':
+            return self.is_critical_mac(err_code)
 
         if err_code > 128:  # this is the way to check for errors in no-ASAN mode
             if IGNORE_ABORT and err_code == (128 + 6): # signal 6 is SIABRT
