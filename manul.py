@@ -447,7 +447,7 @@ class Fuzzer:
 
         if os.name == 'nt':
             return self.is_critical_win(err_code)
-        elif os.name == 'posix':
+        elif sys.platform == "darwin":
             return self.is_critical_mac(err_code)
 
         if err_code > 128:  # this is the way to check for errors in no-ASAN mode
@@ -652,7 +652,7 @@ def configure_dbi(args, target_binary, is_debug):
         if is_debug:
             dbi_tool_params += "-debug"
     elif args.dbi == "pin": # TODO i#13: handle when dbi_tool_libs is None
-        if os.name == "nt":
+        if sys.platform == "win32":
             ERROR("Intel PIN DBI engine is not supported on Windows")
         if dbi_tool_libs is not None:
             # adding desired libs to instrument
