@@ -414,12 +414,12 @@ class Fuzzer:
 
     def generate_new_name(self, file_name):
         iteration = int(round(self.fuzzer_stats.stats['iterations']))
-        if file_name.startswith("crash"): # crash_DateTime_FuzzerId_iteration_original_name
+        if file_name.startswith("manul"): # manul-DateTime-FuzzerId-iteration_original.name
             base_name = file_name[file_name.find("_")+1:]
             file_name = base_name
 
         now = int(round(time.time()))
-        return "crash_%d_%d_%d_%s" % (now, self.fuzzer_id, iteration, file_name)
+        return "manul-%d-%d-%d_%s" % (now, self.fuzzer_id, iteration, file_name)
 
     def is_critical_win(self, exception_code):
 
