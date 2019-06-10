@@ -95,6 +95,15 @@ def parse_config(file_path):
     return additional_cmd
 
 
+def extract_content(file_name):
+    fd = fopen(file_name, 'rb')
+    if not fd:
+        ERROR("Failed to open input file to pass into cmd, stopping")
+    content = fd.read()
+    fd.close()
+    return content
+
+
 def convert_bitmap_from_string(data):
     # converting to shm
     bitmap_to_compare = list("\x00" * self.SHM_SIZE)  # TODO: duplicate, we have similar

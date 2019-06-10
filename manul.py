@@ -88,13 +88,15 @@ class Command(object):
 class Fuzzer:
     def __init__(self, list_of_files, fuzzer_id, virgin_bits_global, input_path, output_path, is_dumb_mode,
                  target_binary, timeout, stats_array, enable_logging, restore_session, dbi_name, determenistic,
-                 crash_bits, dbi_setup, sync_freq): # TODO: shrink args in structure
+                 crash_bits, dbi_setup, sync_freq, fuzz_cmd): # TODO: shrink args in structure
         # local fuzzer config
         global SHM_SIZE
         self.SHM_SIZE = SHM_SIZE
         self.CALIBRATIONS_COUNT = 7
         self.SHM_ENV_VAR = "__AFL_SHM_ID"
         self.dbi = dbi_name
+
+        self.cmd_fuzzing = fuzz_cmd
 
         if dbi_setup != None:
 
@@ -228,12 +230,18 @@ class Fuzzer:
                 dbi_tool_opt = "-t"
 
             binary_path = "".join(self.target_binary_path)
+            if self.cmd_fuzzing:
+                target_file_path = extract_content(target_file_path) # now it is the file content
+
             binary_path = binary_path.replace("@@", target_file_path)
 
             final_string = "%s %s %s %s -- %s" % (self.dbi_engine_path, dbi_tool_opt, self.dbi_tool_path,
                                                   self.dbi_tool_params, binary_path)
         else:
             final_string = "".join(self.target_binary_path)
+            if self.cmd_fuzzing:
+                target_file_path = extract_content(target_file_path) # now it is the file content
+
             final_string = final_string.replace("@@", target_file_path)
 
         return final_string
@@ -583,7 +591,7 @@ def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_s
 
     fuzzer_instance = Fuzzer(files_list, i, virgin_bits, args.input, args.output, args.simple_mode, args.target_binary,
                              args.timeout, stats_array, args.logging_enable, restore_session, args.dbi,
-                             args.determinstic_seed, crash_bits, dbi_setup, args.sync_freq)
+                             args.determinstic_seed, crash_bits, dbi_setup, args.sync_freq, args.cmd_fuzzing)
     fuzzer_instance.run() # never return
 
 
@@ -763,6 +771,7 @@ def parse_args():
     parser.add_argument('--manul_logo', default=False, action='store_true', help = argparse.SUPPRESS)
     parser.add_argument('--logging_enable', default=False, action='store_true', help = argparse.SUPPRESS)
     parser.add_argument('--sync_freq', default=1000000, type=int, help = argparse.SUPPRESS)
+    parser.add_argument('--cmd_fuzzing', default=False, action='store_true', help = argparse.SUPPRESS)
 
     parser.add_argument('target_binary', nargs='*', help="The target binary and options to be executed.")
 
