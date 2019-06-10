@@ -524,12 +524,12 @@ class Fuzzer:
                 command = Command(cmd)
                 if self.cmd_fuzzing:
                     try:
-                        err_code, err_output = command.run(timeout=self.timeout)
+                        exc_code, err_output = command.run(timeout=self.timeout)
                     except TypeError:
                         WARNING("Failed to give this input from bash into the target")
                         continue
                 else:
-                    err_code, err_output = command.run(timeout=self.timeout)
+                    exc_code, err_output = command.run(timeout=self.timeout)
                 elapsed += (timer() - timer_start)
 
                 if exc_code != 0:
