@@ -96,7 +96,7 @@ def parse_config(file_path):
 
 
 def extract_content(file_name):
-    fd = fopen(file_name, 'rb')
+    fd = open(file_name, 'rb')
     if not fd:
         ERROR("Failed to open input file to pass into cmd, stopping")
     content = fd.read()

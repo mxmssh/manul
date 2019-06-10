@@ -386,7 +386,14 @@ class Fuzzer:
 
             INFO(1, None, self.log_file, cmd)
             command = Command(cmd)
-            err_code, err_output = command.run(timeout=self.timeout)
+            if self.cmd_fuzzing:
+                try:
+                    err_code, err_output = command.run(timeout=self.timeout)
+                except TypeError:
+                    WARNING("Failed to give this input from bash into the target")
+                    continue
+            else:
+                err_code, err_output = command.run(timeout=self.timeout)
 
             if err_code > 0:
                 INFO(1, None, self.log_file, "Error is not expected during calibration, something wrong with %s" % file_name)
@@ -515,7 +522,14 @@ class Fuzzer:
                 timer_start = timer()
 
                 command = Command(cmd)
-                exc_code, err_output = command.run(timeout=self.timeout)
+                if self.cmd_fuzzing:
+                    try:
+                        err_code, err_output = command.run(timeout=self.timeout)
+                    except TypeError:
+                        WARNING("Failed to give this input from bash into the target")
+                        continue
+                else:
+                    err_code, err_output = command.run(timeout=self.timeout)
                 elapsed += (timer() - timer_start)
 
                 if exc_code != 0:
