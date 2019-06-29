@@ -24,6 +24,7 @@ from manul_utils import *
 from printing import *
 import time
 import pickle
+import socket
 
 '''
 Protocol format:
@@ -397,3 +398,21 @@ def sync_remote_bitmaps(virgin_bits, ips):
             sock.close()
 
 
+def send_test_case(file_path, target_ip, target_port, target_protocol):
+    data = extract_content(file_path)
+    # TODO: send a lot of chunks
+    if len(data) > 65000:
+        data = data[:65000]
+    # open socket
+    if target_protocol == "tcp":
+        protocol_l4 = socket.SOCK_STREAM
+    else:
+        protocol_l4 = socket.SOCK_DGRAM
+    s = socket.socket(socket.AF_INET, protocol_l4)
+    target_port = int(target_port)
+    INFO(1, None, None, "Connecting to %s %d" % (target_ip, target_port))
+    s.connect((target_ip, target_port))
+    INFO(1, None, None, "Sending %d bytes" % len(data))
+    s.sendall(data)
+    INFO(1, None, None, "Done")
+    s.close()

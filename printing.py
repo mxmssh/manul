@@ -86,11 +86,21 @@ def strfdelta(tdelta, fmt):
     d["minutes"], d["seconds"] = divmod(rem, 60)
     return fmt.format(**d)
 
-def print_per_thread(all_threads_stats, bytes_cov, time_elapsed, active_threads_count, args):
+
+def get_mutator_string(mutators):
+    mutators = mutators.split(",")
+    generator_str = ""
+    for mutator in mutators:
+        name = mutator.split(":")[0]
+        generator_str += name + " "
+    return generator_str
+
+
+def print_per_thread(all_threads_stats, bytes_cov, time_elapsed, active_threads_count, args, mutators):
     stats = FuzzerStats()
     max_cmd_length = 80
     print("")
-    print(bcolors.HEADER + "                          Manul v 0.1. Fuzzer details" + bcolors.ENDC)
+    print(bcolors.HEADER + "                          Manul v 0.2. Fuzzer details" + bcolors.ENDC)
     print("Active threads: %d" % active_threads_count)
     mode_def_str = "n/a"
     if args.simple_mode:
@@ -100,7 +110,7 @@ def print_per_thread(all_threads_stats, bytes_cov, time_elapsed, active_threads_
     else:
         mode_def_str = "afl-gcc"
 
-    generator_str = "radamsa"
+    generator_str = get_mutator_string(mutators)
 
     mode_str = "Mode: %s             Strategy: %s" % (mode_def_str, generator_str)
     logging = "Logging: %s" % ("Enabled" if args.logging_enable else 'Disabled')
@@ -152,10 +162,10 @@ def print_per_thread(all_threads_stats, bytes_cov, time_elapsed, active_threads_
             print("[Fuzzer %d] Last new path:%s New paths:%s Stability:%s" % (i, last_path_time_str, new_paths_str,
                   stability_str))
 
-        iterations_str = "%d" % stats.stats['iterations']
+        executions_str = "%d" % stats.stats['executions']
         exceptions_str = "%d" % stats.stats['exceptions']
         exec_per_sec = "%.5f" % stats.stats['exec_per_sec']
-        print("[Fuzzer %d] Iterations:%s Exceptions:%s Exec/sec:%s" % (i, iterations_str, exceptions_str, exec_per_sec))
+        print("[Fuzzer %d] Executions:%s Exceptions:%s Exec/sec:%s" % (i, executions_str, exceptions_str, exec_per_sec))
 
         file_running_str = "%d" % stats.stats['file_running']
         files_in_queue_str = "%d" % stats.stats['files_in_queue']
@@ -164,7 +174,7 @@ def print_per_thread(all_threads_stats, bytes_cov, time_elapsed, active_threads_
         print("-" * max_cmd_length)
         print("\n")
 
-def print_summary(all_threads_stats, bytes_cov, time_elapsed, active_threads_count, args, update):
+def print_summary(all_threads_stats, bytes_cov, time_elapsed, active_threads_count, args, update, mutators):
     stats_total = FuzzerStats()
     max_cmd_length = 80
     first_table_max_len = 42
@@ -182,7 +192,7 @@ def print_summary(all_threads_stats, bytes_cov, time_elapsed, active_threads_cou
             else:
                 stats_total.stats[k] += element # cummulative element
 
-    if stats_total.stats['iterations'] == 0.0: # wait while at least one thread finish dry run
+    if stats_total.stats['executions'] == 0.0: # wait while at least one thread finish dry run
         return
 
     if update and not args.debug:
@@ -216,7 +226,7 @@ def print_summary(all_threads_stats, bytes_cov, time_elapsed, active_threads_cou
         unique_crashes_str = ("%d" % stats_total.stats['unique_crashes'])
 
     print(bcolors.BOLD)
-    print(bcolors.HEADER + "                          Manul v 0.1. All fuzzers summary                     " + bcolors.ENDC)
+    print(bcolors.HEADER + "                          Manul v 0.2. All fuzzers summary                     " + bcolors.ENDC)
     active_threads_str = "---------Active threads: %d " % active_threads_count
     cpu_load_str = "CPU: %.2f%%-----" % cpu_load
     line_len = max_cmd_length - len(active_threads_str) - len(cpu_load_str)
@@ -232,7 +242,7 @@ def print_summary(all_threads_stats, bytes_cov, time_elapsed, active_threads_cou
     else:
         mode_def_str = "afl-gcc"
 
-    generator_str = "radamsa"
+    generator_str = get_mutator_string(mutators)
 
     mode_str = "|  Mode: %s             Strategy: %s" % (mode_def_str, generator_str)
     logging = "Logging: %s  |" % ("Enabled" if args.logging_enable else 'Disabled')
@@ -253,7 +263,7 @@ def print_summary(all_threads_stats, bytes_cov, time_elapsed, active_threads_cou
     print("|  --Coverage statistics---------------------   ---Performance---------------- |")
     print(fill_table("Volatile bytes", "Exec/sec", blacklisted_paths_str, ("%.5f" % stats_total.stats['exec_per_sec']),
                      first_table_max_len, second_table_max_len))
-    print(fill_table("Bitmap coverage", "Iterations", bitmap_cov_str, ("%d" % stats_total.stats['iterations']),
+    print(fill_table("Bitmap coverage", "Executions", bitmap_cov_str, ("%d" % stats_total.stats['executions']),
                      first_table_max_len, second_table_max_len))
     print(fill_table("New paths found", "Files in queue", new_paths_str, ("%d" % stats_total.stats['files_in_queue']),
                      first_table_max_len, second_table_max_len))
@@ -270,13 +280,15 @@ def LOG(log_file, msg):
     current_dt = datetime.datetime.now()
 
     formated_time = current_dt.strftime("%Y-%m-%d %H:%M:%S")
-    log_file.write("[%s] %s \n" % (formated_time, msg))
+    try:
+        log_file.write("[%s] %s \n" % (formated_time, msg))
+    except:
+        WARNING(None, "failed to log info to the log file due to exception in LOG write %s")
 
 def ERROR(msg):
     print(bcolors.BOLD + bcolors.FAIL + "[ERROR] %s" % msg + bcolors.ENDC)
     sys.exit(-1)
 
-# TODO: support printing only to log file
 def WARNING(log_file, msg):
     if log_file is not None:
         LOG(log_file, msg)
