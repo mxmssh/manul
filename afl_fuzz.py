@@ -295,10 +295,10 @@ class AFLFuzzer(object):
         global tokens_list
         self.possible_stages = OrderedDict()
 
-        self.list_of_functions = [#bitflip_1bit, bitflip_2bits, bitflip_4bits,
-                                  #byteflip_1, byteflip_2, byteflip_4,
-                                  #mutate_byte_arithmetic, mutate_2bytes_arithmetic, mutate_4bytes_arithmetic,
-                                  #mutate_1byte_interesting, mutate_2bytes_interesting, mutate_4bytes_interesting,
+        self.list_of_functions = [bitflip_1bit, bitflip_2bits, bitflip_4bits,
+                                  byteflip_1, byteflip_2, byteflip_4,
+                                  mutate_byte_arithmetic, mutate_2bytes_arithmetic, mutate_4bytes_arithmetic,
+                                  mutate_1byte_interesting, mutate_2bytes_interesting, mutate_4bytes_interesting,
                                   dictionary_overwrite, dictionary_insert, havoc, trim]
         self.current_function = self.list_of_functions[0]
         self.current_result = None
