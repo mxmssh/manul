@@ -43,7 +43,7 @@ else:
 
 import subprocess, threading
 import signal
-#TODO: python3 doesn't work in Linux (works fine in Windows) python2 doesn't work on Windows
+
 #TODO: communication with process + error codes would be better to implement using AFL's instrumentation code
 # and shared memory
 
@@ -735,7 +735,7 @@ class Fuzzer:
                         INFO(1, None, self.log_file, "Input %s produces new coverage, calibrating" % file_name)
                         if self.calibrate_test_case(mutated_name) == 2:
                             self.fuzzer_stats.stats['new_paths'] += 1
-                            self.fuzzer_stats.stats['last_path_time'] = timer()
+                            self.fuzzer_stats.stats['last_path_time'] = time.time()
                             INFO(1, None, self.log_file, "Calibration finished sucessfully. Saving new finding")
                             new_coverage_file_name = self.generate_new_name(file_name)
                             INFO(1, None, self.log_file, "Copying %s to %s" % (full_output_file_path,
