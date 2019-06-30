@@ -1,4 +1,4 @@
-from afl.helper import *
+from helper import *
 from collections import OrderedDict
 
 #TODO: write unit test for each of this function
