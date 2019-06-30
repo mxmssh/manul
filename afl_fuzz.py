@@ -1,7 +1,8 @@
 from afl.helper import *
 from collections import OrderedDict
 
-#TODO: check all of these functions in actual AFL
+#TODO: write unit test for each of this function
+tokens_list = None
 
 def bitflip_1bit(data, func_state): # for i in range((len(data)*8)):
     if not func_state:
@@ -93,6 +94,7 @@ def byteflip_4(data, func_state):
 
     return data, func_state
 
+
 set_arith_max = 35 # TODO: define it better!!!!
 def mutate_byte_arithmetic(data, func_state):
     if not func_state:
@@ -114,6 +116,7 @@ def mutate_byte_arithmetic(data, func_state):
             func_state = None
 
     return data, func_state
+
 
 def mutate_2bytes_arithmetic(data, func_state):
     if not func_state:
@@ -151,6 +154,7 @@ def mutate_4bytes_arithmetic(data, func_state):
 
     return data, func_state
 
+
 # TODO: implement is_not_bitflip and is_not_arithmetic
 def mutate_1byte_interesting(data, func_state):
     if not func_state:
@@ -169,6 +173,7 @@ def mutate_1byte_interesting(data, func_state):
         func_state = None
 
     return data, func_state
+
 
 # TODO: implement is_not_bitflip and is_not_arithmetic
 def mutate_2bytes_interesting(data, func_state):
@@ -196,6 +201,7 @@ def mutate_2bytes_interesting(data, func_state):
 
     return data, func_state
 
+
 # TODO: implement is_not_bitflip and is_not_arithmetic
 def mutate_4bytes_interesting(data, func_state):
     if not func_state:
@@ -221,9 +227,52 @@ def mutate_4bytes_interesting(data, func_state):
 
     return data, func_state
 
-def dictionary(data, func_state):
-    #TODO: implement
-    return data, None
+
+#TODO: auto-create dictionary from binary
+#TODO: afl has this also https://github.com/mirrorer/afl/blob/2fb5a3482ec27b593c57258baae7089ebdc89043/afl-fuzz.c#L5123
+def dictionary_overwrite(data, func_state):
+    global tokens_list
+    if not func_state:
+        func_state = [0, 0] # first is an index in tokens_list, second is an index in data
+
+    data_len = len(data)
+    token = tokens_list[func_state[0]]
+    place = func_state[1]
+
+    data = data[:place] + token + data[place + len(token):]
+    func_state[1] += 1
+
+    if place >= data_len- len(token):
+        func_state[0] += 1 # take the next token
+        func_state[1] = 0
+
+        if func_state[0] >= len(tokens_list):
+            func_state = None
+
+    return data, func_state
+
+
+def dictionary_insert(data, func_state):
+    global tokens_list
+    if not func_state:
+        func_state = [0, 0] # first is an index in tokens_list, second is an index in data
+
+    data_len = len(data)
+
+    token = tokens_list[func_state[0]]
+    place = func_state[1]
+
+    data = data[:place] + token + data[place:]
+    func_state[1] += 1
+
+    if place >= data_len:
+        func_state[0] += 1 # take the next token
+        func_state[1] = 0
+
+        if func_state[0] >= len(tokens_list):
+            func_state = None
+
+    return data, func_state
 
 
 def havoc(data, func_state):
@@ -236,17 +285,25 @@ def trim(data, func_state):
     return data, None
 
 
+# TODO: extras_ao, havoc, splice
+stages_list = {"flip1", "flip2", "flip4", "flip8", "flip16", "flip32", "arith8", "arith16", "arith32", "interest8",
+               "interest16", "interest32", "extras_uo", "extras_ui", "havoc", "splice"}
+
+
 class AFLFuzzer(object):
-    def __init__(self):
+    def __init__(self, user_tokens_dict):
+        global tokens_list
         self.possible_stages = OrderedDict()
 
-        self.list_of_functions = [bitflip_1bit, bitflip_2bits, bitflip_4bits,
-                                  byteflip_1, byteflip_2, byteflip_4,
-                                  mutate_byte_arithmetic, mutate_2bytes_arithmetic, mutate_4bytes_arithmetic,
-                                  mutate_1byte_interesting, mutate_2bytes_interesting, mutate_4bytes_interesting]
+        self.list_of_functions = [#bitflip_1bit, bitflip_2bits, bitflip_4bits,
+                                  #byteflip_1, byteflip_2, byteflip_4,
+                                  #mutate_byte_arithmetic, mutate_2bytes_arithmetic, mutate_4bytes_arithmetic,
+                                  #mutate_1byte_interesting, mutate_2bytes_interesting, mutate_4bytes_interesting,
+                                  dictionary_overwrite, dictionary_insert, havoc, trim]
         self.current_function = self.list_of_functions[0]
         self.current_result = None
         self.current_function_id = 0
+        tokens_list = user_tokens_dict
 
     def mutate(self, data):
 

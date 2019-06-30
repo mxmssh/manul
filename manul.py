@@ -43,7 +43,7 @@ else:
 
 import subprocess, threading
 import signal
-#TODO: python3 doesn't work in Linux (works fine in Windows) python2 doesn't work on WIndows
+#TODO: python3 doesn't work in Linux (works fine in Windows) python2 doesn't work on Windows
 #TODO: communication with process + error codes would be better to implement using AFL's instrumentation code
 # and shared memory
 
@@ -111,6 +111,8 @@ class Fuzzer:
         self.SHM_ENV_VAR = "__AFL_SHM_ID"
         self.dbi = args.dbi
         self.afl_fuzzer = dict()
+        self.token_dict = list()
+
 
         self.user_mutators = dict()
         self.mutator_weights = OrderedDict()
@@ -121,11 +123,23 @@ class Fuzzer:
                 name, weight = weight.split(":")
                 total_weights += int(weight)
                 self.mutator_weights[name] = total_weights
-
         except:
             ERROR("Invalid format for mutator_weights string, check manul.config file")
+
         if total_weights != 10:
             ERROR("Weights in mutator_weights should have 10 in sum, check manul.config file")
+
+        try:
+            fd = open(args.dict, 'r')
+            content = fd.readlines()
+            fd.close()
+            for line in content:
+                line = line.replace("\n", "")
+                if line.startswith("#") or line == "":
+                    continue
+                self.token_dict.append(line)
+        except:
+            WARNING("Failed to parse dictionary file, dictionary is in invalid format or not accessible")
 
         self.current_file_name = None
         self.prev_hashes = dict() # used to store hash of coverage bitmap for each fil
@@ -367,7 +381,7 @@ class Fuzzer:
 
         #init AFL fuzzer state
         for file_name in self.list_of_files:
-            self.afl_fuzzer[file_name] = afl_fuzz.AFLFuzzer() # for each file assigning AFLFuzzer
+            self.afl_fuzzer[file_name] = afl_fuzz.AFLFuzzer(self.token_dict) # for each file assigning AFLFuzzer
 
 
     def dry_run(self):
@@ -401,7 +415,7 @@ class Fuzzer:
                 INFO(1, None, self.log_file, "Output from target %s" % err_output)
                 ERROR("%s doesn't cover any path in the target, Make sure the binary is actually instrumented" % file_name)
 
-            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.virgin_bits, False)
+            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.virgin_bits, False, None)
             if ret == 0:
                 useless += 1
                 WARNING(self.log_file, "Test %s might be useless because it doesn't cover new paths in the target, consider removing it" % file_name)
@@ -416,9 +430,12 @@ class Fuzzer:
         self.update_stats()
 
 
-    def has_new_bits(self, trace_bits_as_str, update_virgin_bits, volatile_bytes, bitmap_to_compare, calibration):
+    def has_new_bits(self, trace_bits_as_str, update_virgin_bits, volatile_bytes, bitmap_to_compare, calibration,
+                     full_output_file_path):
 
         ret = 0
+
+        #print_bitmaps(bitmap_to_compare, trace_bits_as_str, full_output_file_path)
 
         if not calibration:
             hash_current = zlib.crc32(trace_bits_as_str) & 0xFFFFFFFF
@@ -437,26 +454,26 @@ class Fuzzer:
                 continue  # ignoring volatile bytes
 
             if PY3:
-                trace_byte = trace_bits_as_str[j]
+                trace_byte = trace_bits_as_str[j] # optimize it and compare by 4-8 bytes or even use xmm0?
             else:
                 trace_byte = ord(trace_bits_as_str[j]) # self.trace_bits.contents[j])#
+
             if not trace_byte:
                 continue
 
             virgin_byte = bitmap_to_compare[j]
 
-            if trace_byte & virgin_byte:
-
-                if ret < 2 and (trace_byte != 0x0 and virgin_byte == 0xff):
-                    ret = 2 # new path discovered
-                else:
-                    ret = 2 # TODO: a new hit of already seen path, precise search model vs quick?
+            if trace_byte and (trace_byte & virgin_byte):
+                if ret < 2:
+                    if virgin_byte == 0xff:
+                        ret = 2  # new path discovered
+                    else:
+                        ret = 1  # new hit of existent paths
 
                 virgin_byte = virgin_byte & ~trace_byte
 
                 if update_virgin_bits:
-                    bitmap_to_compare[j] = virgin_byte # python will handle syncronization issues
-
+                    bitmap_to_compare[j] = virgin_byte # python will handle potential syncronization issues
 
         return ret
 
@@ -508,7 +525,7 @@ class Fuzzer:
         INFO(1, None, self.log_file, "We have %d volatile bytes for this new finding" % len(volatile_bytes))
         # let's try to check for new coverage ignoring volatile bytes
         self.fuzzer_stats.stats['blacklisted_paths'] = len(volatile_bytes)
-        return self.has_new_bits(trace_bits_as_str, True, volatile_bytes, self.virgin_bits, True) # it means that we're returning result of the last run (might be wrong)
+        return self.has_new_bits(trace_bits_as_str, True, volatile_bytes, self.virgin_bits, True, None) # it means that we're returning result of the last run (might be wrong)
 
     def update_stats(self):
         for i, (k,v) in enumerate(self.fuzzer_stats.stats.items()):
@@ -695,7 +712,7 @@ class Fuzzer:
 
                         if not self.is_dumb_mode:
                             trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
-                            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.crash_bits, False)
+                            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.crash_bits, False, full_output_file_path)
                             if ret == 2:
                                 INFO(0, bcolors.BOLD + bcolors.OKGREEN, self.log_file, "Crash is unique")
                                 self.fuzzer_stats.stats['unique_crashes'] += 1
@@ -710,7 +727,7 @@ class Fuzzer:
                     # Reading the coverage
 
                     trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
-                    ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits, False) # we are not ready to update coverage at this stage due to volatile bytes
+                    ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits, False, full_output_file_path) # we are not ready to update coverage at this stage due to volatile bytes
                     if ret == 2:
                         INFO(1, None, self.log_file, "Input %s produces new coverage, calibrating" % file_name)
                         if self.calibrate_test_case(mutated_name) == 2:
@@ -722,7 +739,7 @@ class Fuzzer:
                                  self.queue_path + "/" + new_coverage_file_name))
                             shutil.copy(full_output_file_path, self.queue_path + "/" + new_coverage_file_name)
                             new_files.append((1, new_coverage_file_name))
-                            self.afl_fuzzer[new_coverage_file_name] = afl_fuzz.AFLFuzzer()  # for each new file assign new AFLFuzzer
+                            self.afl_fuzzer[new_coverage_file_name] = afl_fuzz.AFLFuzzer(self.token_dict)  # for each new file assign new AFLFuzzer
                             self.prev_hashes[new_coverage_file_name] = None
 
                 self.update_stats()
@@ -942,6 +959,7 @@ def parse_args():
     parser.add_argument('--target_protocol', default = None, help = argparse.SUPPRESS)
     parser.add_argument('--mutator_weights', default = None, help = argparse.SUPPRESS)
     parser.add_argument('--user_signals', default = None, help = argparse.SUPPRESS)
+    parser.add_argument("--dict", default = None, help = argparse.SUPPRESS)
 
     parser.add_argument('target_binary', nargs='*', help="The target binary and options to be executed.")
 
@@ -977,6 +995,10 @@ def parse_args():
     if args.target_ip_port and args.nfuzzers > 1:
         ERROR("Multi-threaded network fuzzing is not supported, yet")
 
+    if args.dict:
+        if not os.path.isfile(args.dict):
+            WARNING(None, "Unable to read dictionary file from %s, file doesn't exist" % args.dict)
+
     return args
 
 
@@ -1001,7 +1023,7 @@ if __name__ == "__main__":
 
     if not args.simple_mode and args.dbi is None and not check_instrumentation(target_binary):
         ERROR("Failed to find afl's instrumentation in the target binary, try to recompile or run manul in dumb mode")
-    # TODO i#16: check that our backend fuzzer actually exist
+    # TODO i#16: check that our mutator actually exist
     if not os.path.isdir(args.input):
         ERROR("Input directory doesn't exist")
 
@@ -1044,7 +1066,7 @@ if __name__ == "__main__":
         all_threads_stats.append(stats_array)
         #all_threads_handles.append(t)
 
-    INFO(0, None, None, "%d fuzzer instances sucessfully started" % args.nfuzzers)
+    INFO(0, None, None, "%d fuzzer instances sucessfully launched" % args.nfuzzers)
 
     sync_t = None
     if (args.net_config_slave is not None or args.net_config_master is not None) and not args.simple_mode:

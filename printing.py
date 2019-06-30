@@ -304,3 +304,27 @@ def INFO(lvl, color, log_file, msg):
 
     if color: print(color + "[INFO] %s" % msg + bcolors.ENDC)
     else: print("[INFO] %s" % msg)
+
+
+''' Use it if you want to print bitmap and has_new_bits function'''
+def print_bitmaps(bitmap_original, bitmap, output_file_path):
+    ret = 0
+    fd = open("bitmap_debug", 'a')
+    if output_file_path:
+        content = open(output_file_path, 'r').readlines()
+        fd.write("--------------------------------------------\n")
+        fd.write(str(content) + "\n")
+
+    for i in range(0, SHM_SIZE):
+        trace_byte = ord(bitmap[i])
+        virgin_byte = bitmap_original[i]
+        if trace_byte and (trace_byte & virgin_byte):
+            if ret < 2:
+                if virgin_byte == 0xff:
+                    ret = 2  # new path discovered
+                else:
+                    ret = 1  # new hit of existent paths
+        if ord(bitmap[i]):
+            fd.write("%d: %s %s\n" % (i, hex(virgin_byte), hex(trace_byte)))
+    fd.write("Will return %d\n" % ret)
+    fd.close()
