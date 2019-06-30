@@ -18,6 +18,9 @@
 # Exception Types
 # see https://github.com/Alexpux/mingw-w64/blob/master/mingw-w64-headers/include/ntstatus.h
 
+STATUS_CONTROL_C_EXIT = 0xc000013a
+
+#TODO: this is very broad description of error codes. Define it better.
 EXCEPTION_FIRST_CRITICAL_CODE        = 0xC0000000   
 
 EXCEPTION_LAST_CRITICAL_CODE         = 0xC03A0019

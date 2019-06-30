@@ -8,7 +8,7 @@ def bitflip_1bit(data, func_state): # for i in range((len(data)*8)):
     if not func_state:
         func_state = 0
 
-    data[func_state/8] ^= (0x80 >> (func_state % 8))
+    data[int(func_state / 8)] ^= (0x80 >> (func_state % 8))
     func_state += 1
 
     if func_state >= len(data) * 8:
@@ -20,7 +20,7 @@ def bitflip_2bits(data, func_state): # for i in range((len(data)*7)):
     if not func_state:
         func_state = 0
 
-    data[func_state / 7] ^= (0xC0 >> (func_state % 7))
+    data[int(func_state / 7)] ^= (0xC0 >> (func_state % 7))
 
     func_state += 1
 
@@ -34,7 +34,7 @@ def bitflip_4bits(data, func_state): # for i in range((len(data)*5)):
     if not func_state:
         func_state = 0
 
-    data[func_state / 5] ^= (0xF0 >> (func_state % 5))
+    data[int(func_state / 5)] ^= (0xF0 >> (func_state % 5))
 
     func_state += 1
     if func_state >= len(data) * 5:
@@ -103,9 +103,9 @@ def mutate_byte_arithmetic(data, func_state):
     # TODO: we have to check for could_be_bitflip()
 
     if func_state[1] == False:
-        data[func_state[0] / set_arith_max] = ((data[func_state[0] / set_arith_max] + (func_state[0] % set_arith_max)) & 0xff)
+        data[int(func_state[0] / set_arith_max)] = ((data[int(func_state[0] / set_arith_max)] + (func_state[0] % set_arith_max)) & 0xff)
     else:
-        data[func_state[0] / set_arith_max] = ((data[func_state[0] / set_arith_max] - (func_state[0] % set_arith_max)) & 0xff)
+        data[int(func_state[0] / set_arith_max)] = ((data[int(func_state[0] / set_arith_max)] - (func_state[0] % set_arith_max)) & 0xff)
 
     func_state[0] += 1
 

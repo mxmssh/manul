@@ -21,6 +21,7 @@ import printing
 import time
 import psutil
 import signal
+import sys
 
 '''
 manul usefull functions
@@ -30,9 +31,12 @@ SHM_SIZE = 65535
 IGNORE_ABORT = True
 UPDATE = True
 
-#https://github.com/torvalds/linux/blob/556e2f6020bf90f63c5dd65e9a2254be6db3185b/include/linux/signal.h#L330
-critical_signals_linux = {signal.SIGQUIT, signal.SIGILL, signal.SIGTRAP, signal.SIGBUS, signal.SIGFPE, signal.SIGSEGV,
-                          signal.SIGXCPU, signal.SIGXFSZ, signal.SIGSYS} #,signal.SIGABRT
+if not sys.platform == "win32":
+    #https://github.com/torvalds/linux/blob/556e2f6020bf90f63c5dd65e9a2254be6db3185b/include/linux/signal.h#L330
+    critical_signals_linux = {signal.SIGQUIT, signal.SIGILL, signal.SIGTRAP, signal.SIGBUS, signal.SIGFPE, signal.SIGSEGV,
+                              signal.SIGXCPU, signal.SIGXFSZ, signal.SIGSYS} #,signal.SIGABRT
+else:
+    critical_signals_linux = {}
 
 class FuzzerStats:
     def __init__(self):
@@ -123,7 +127,10 @@ def kill_all():
     children = parent.children(recursive=True)
     for p in children:
         try:
-            p.send_signal(signal.SIGKILL)
+            if sys.platform == "win32":
+                p.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                p.send_signal(signal.SIGKILL)
         except psutil.NoSuchProcess as exc:
             pass # already dead
 
@@ -135,7 +142,11 @@ def watchdog(timeout):
     :return:
     '''
     procs = dict()
-    sig = signal.SIGTERM
+    if sys.platform == "win32":
+        sig = signal.CTRL_BREAK_EVENT
+    else:
+        sig = signal.SIGTERM # TODO: check on MacOS
+
     while True:
         # getting list of running targets
         try:

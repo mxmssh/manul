@@ -550,6 +550,9 @@ class Fuzzer:
 
     def is_critical_win(self, exception_code):
 
+        if exception_code == STATUS_CONTROL_C_EXIT:
+            return False
+
         if exception_code >= EXCEPTION_FIRST_CRITICAL_CODE and exception_code < EXCEPTION_LAST_CRITICAL_CODE:
             return True
 
