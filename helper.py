@@ -4,13 +4,18 @@
 import random
 import os
 
-KAFL_MAX_FILE = 1 << 15
+AFL_MAX_FILE = 1 << 15
 
+# Extra-large blocks, selected very rarely (<5% of the time): */
+AFL_HAVOC_BLK_XL = 32768
+# Caps on block sizes
+AFL_HAVOC_BLK_SMALL = 32
+AFL_HAVOC_BLK_MEDIUM = 128
 AFL_HAVOC_BLK_LARGE = 1500
+
 AFL_ARITH_MAX = 35
-AFL_HAVOC_MIN = 2000
-AFL_HAVOC_CYCLES = 5000
-AFL_HAVOC_STACK_POW2 = 3# 7
+AFL_HAVOC_STACK_POW2 = 7
+SPLICE_CYCLES = 15
 
 #TODO: check in AFL
 interesting_8_Bit = [128, 255, 0, 1, 16, 32, 64, 100, 127]
@@ -19,10 +24,33 @@ interesting_32_Bit = [4294967295, 2248146693, 2147516417, 32768, 65535, 65536, 1
 
 random.seed(os.urandom(4))
 
-# Todo
+
 def AFL_choose_block_len(limit):
-    min_value = 1
-    max_value = 32
+    # Caps on block sizes for cloning and deletion operations. Each of these
+    # ranges has a 33% probability of getting picked, except for the first
+    # two cycles where smaller blocks are favored.
+    # TODO: in afl they have this: MIN(queue_cycle, 3)
+    rlim = 3
+
+    #TODO: afl has this
+    #if not run_over10m:
+        #rlim = 1
+
+    case_id = RAND(rlim)
+    if case_id == 0:
+        min_value = 1
+        max_value = AFL_HAVOC_BLK_SMALL
+    elif case_id == 1:
+        min_value = AFL_HAVOC_BLK_SMALL
+        max_value = AFL_HAVOC_BLK_MEDIUM
+    else:
+        case_id = RAND(10)
+        if case_id:
+            min_value = AFL_HAVOC_BLK_MEDIUM
+            max_value = AFL_HAVOC_BLK_LARGE
+        else:
+            min_value = AFL_HAVOC_BLK_LARGE
+            max_value = AFL_HAVOC_BLK_XL
 
     if min_value >= limit:
         min_value = 1

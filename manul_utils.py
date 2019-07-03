@@ -185,6 +185,19 @@ def save_content(data, output_file_path):
     #fd.close()
     return 1
 
+def is_bytearrays_equal(data1, data2):
+    return False # TODO: implement that
+
+def locate_diffs(data1, data2, length):
+    f_loc = -1
+    l_loc = -1
+    for i in range(0, length):
+        if data1[i] != data2[i]:
+            if f_loc == -1: f_loc = i
+            l_loc = i
+    return f_loc, l_loc
+
+
 def convert_bitmap_from_string(data):
     # converting to shm
     bitmap_to_compare = list("\x00" * SHM_SIZE)  # TODO: duplicate, we have similar

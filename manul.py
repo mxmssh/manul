@@ -137,9 +137,10 @@ class Fuzzer:
                 line = line.replace("\n", "")
                 if line.startswith("#") or line == "":
                     continue
+                line = bytearray(line, "utf-8")
                 self.token_dict.append(line)
         except:
-            WARNING("Failed to parse dictionary file, dictionary is in invalid format or not accessible")
+            WARNING(None, "Failed to parse dictionary file, dictionary is in invalid format or not accessible")
 
         self.current_file_name = None
         self.prev_hashes = dict() # used to store hash of coverage bitmap for each fil
@@ -381,7 +382,7 @@ class Fuzzer:
 
         #init AFL fuzzer state
         for file_name in self.list_of_files:
-            self.afl_fuzzer[file_name] = afl_fuzz.AFLFuzzer(self.token_dict) # for each file assigning AFLFuzzer
+            self.afl_fuzzer[file_name] = afl_fuzz.AFLFuzzer(self.token_dict, self.queue_path) # for each file assigning AFLFuzzer
 
 
     def dry_run(self):
@@ -613,9 +614,9 @@ class Fuzzer:
         if not data:
             WARNING(self.log_file, "Unable to open the file %s" % full_input_file_path)
             return 1
-        res = self.afl_fuzzer[file_name].mutate(data)
+        res = self.afl_fuzzer[file_name].mutate(data, self.list_of_files)
         if not res:
-            WARNING("Unable to mutate data provided using afl")
+            WARNING(self.log_file, "Unable to mutate data provided using afl")
             return 1
         if len(data) <= 0:
             WARNING(self.log_file, "AFL produced empty file for %s", full_input_file_path)
@@ -742,7 +743,8 @@ class Fuzzer:
                                  self.queue_path + "/" + new_coverage_file_name))
                             shutil.copy(full_output_file_path, self.queue_path + "/" + new_coverage_file_name)
                             new_files.append((1, new_coverage_file_name))
-                            self.afl_fuzzer[new_coverage_file_name] = afl_fuzz.AFLFuzzer(self.token_dict)  # for each new file assign new AFLFuzzer
+                            # for each new file assign new AFLFuzzer
+                            self.afl_fuzzer[new_coverage_file_name] = afl_fuzz.AFLFuzzer(self.token_dict, self.queue_path)
                             self.prev_hashes[new_coverage_file_name] = None
 
                 self.update_stats()
