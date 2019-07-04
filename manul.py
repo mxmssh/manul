@@ -378,12 +378,14 @@ class Fuzzer:
                 continue
             try:
                 self.user_mutators[module_name] = importlib.import_module(module_name)
-            except:
-                WARNING(self.log_file, "Unable to load module %s" % module_name)
+            except ImportError as exc:
+                ERROR("Unable to load user provided mutator %s. %s" % (module_name, exc.message))
+
+            self.user_mutators[module_name].init()
 
         #init AFL fuzzer state
         for file_name in self.list_of_files:
-            self.afl_fuzzer[file_name] = afl_fuzz.AFLFuzzer(self.token_dict, self.queue_path) # for each file assigning AFLFuzzer
+            self.afl_fuzzer[file_name] = afl_fuzz.AFLFuzzer(self.token_dict, self.queue_path) #assign AFL for each file
 
 
     def dry_run(self):
@@ -609,9 +611,6 @@ class Fuzzer:
 
     def mutate_afl(self, file_name, full_input_file_path, full_output_file_path):
         data = extract_content(full_input_file_path)
-        if not data:
-            WARNING(self.log_file, "Unable to open the file %s" % full_input_file_path)
-            return 1
         res = self.afl_fuzzer[file_name].mutate(data, self.list_of_files)
         if not res:
             WARNING(self.log_file, "Unable to mutate data provided using afl")
@@ -631,8 +630,15 @@ class Fuzzer:
             elif execution < weight and name == "radamsa":
                 return self.mutate_radamsa(full_input_file_path, full_output_file_path)
             elif execution < weight:
-                mutator = self.user_mutators[name]
-                mutator.mutate(file_name, full_input_file_path, full_output_file_path)
+                mutator = self.user_mutators.get(name, None)
+                if not mutator:
+                    ERROR("Unable to load user provided mutator %s at mutate_input stage" % name)
+                data = extract_content(full_input_file_path)
+                data = mutator.mutate(data) # todo handle potential errors here
+                if not data:
+                    ERROR("No data returned from user provided mutator. Exciting.")
+                save_content(data, full_output_file_path)
+                return 0
             else:
                 continue
 
