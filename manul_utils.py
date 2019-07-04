@@ -168,6 +168,9 @@ def extract_content(file_name):
     if not fd:
         printing.ERROR("Failed to open input file, error code, stopping")
     content = bytearray(fd.read())
+    if not content:
+        printing.ERROR("Unable to read data from the file %s" % file_name)
+
     fd.close()
     return content
 
