@@ -240,4 +240,8 @@ if __name__ == "__main__":
     test_cycle(bytearray("AAAA", "utf-8")) # short string
     test_cycle(bytearray("AA", "utf-8")) # shorter string
     test_cycle(bytearray("A", "utf-8")) # the shortest string
+    if is_bytearrays_equal("AAAAAA", "AAAAAA") == False or is_bytearrays_equal("AAAAAAA", "BEBEBEBE") == True:
+        print("is_bytearray_equal failed")
+    else:
+        print("is_bytearray_equal succeded")
     #test_cycle(bytearray("")) # no string at all

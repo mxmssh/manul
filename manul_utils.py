@@ -22,6 +22,8 @@ import time
 import psutil
 import signal
 import sys
+from helper import *
+import zlib
 
 '''
 manul usefull functions
@@ -113,7 +115,7 @@ def get_list_of_idle_processes(timeout):
     for p in children:
         #enumerating targets without name python in them
         child = psutil.Process(p.pid)
-        if "python" in child.name() or "sh" == child.name(): # TODO: if target has python name than we can't stop it!
+        if "python" in child.name() or "sh" == child.name(): # TODO: if target has python name than we can't stop it
             continue
         created_at = child.create_time()
         elapsed = time.time() - created_at
@@ -186,7 +188,11 @@ def save_content(data, output_file_path):
     return 1
 
 def is_bytearrays_equal(data1, data2):
-    return False # TODO: implement that
+    hash1 = zlib.crc32(data1)
+    hash2 = zlib.crc32(data2)
+    if hash1 != hash2:
+        return False
+    return True
 
 def locate_diffs(data1, data2, length):
     f_loc = -1
@@ -196,11 +202,3 @@ def locate_diffs(data1, data2, length):
             if f_loc == -1: f_loc = i
             l_loc = i
     return f_loc, l_loc
-
-
-def convert_bitmap_from_string(data):
-    # converting to shm
-    bitmap_to_compare = list("\x00" * SHM_SIZE)  # TODO: duplicate, we have similar
-    for i in range(0, SHM_SIZE):
-        bitmap_to_compare[i] = ord(data[i])
-    return bitmap_to_compare

@@ -4,6 +4,7 @@ from manul_utils import  *
 
 #TODO: write unit test for each of this function.
 tokens_list = None
+tokens_list_length = None
 
 def bitflip_1bit(data, func_state): # for i in range((len(data)*8)):
     if not func_state:
@@ -271,7 +272,9 @@ def mutate_4bytes_interesting(data, func_state):
 #TODO: auto-create dictionary from binary
 #TODO: afl has this also https://github.com/mirrorer/afl/blob/2fb5a3482ec27b593c57258baae7089ebdc89043/afl-fuzz.c#L5123
 def dictionary_overwrite(data, func_state):
-    global tokens_list
+    global tokens_list, tokens_list_length
+    if tokens_list_length <= 0:
+        return data, None
     if not func_state:
         func_state = [0, 0] # first is an index in tokens_list, second is an index in data
 
@@ -296,7 +299,10 @@ def dictionary_overwrite(data, func_state):
 
 
 def dictionary_insert(data, func_state):
-    global tokens_list
+    global tokens_list, tokens_list_length
+    if tokens_list_length <= 0:
+        return data, None
+
     if not func_state:
         func_state = [0, 0] # first is an index in tokens_list, second is an index in data
 
@@ -500,7 +506,7 @@ def havoc(data, func_state):
         data = func_to_choose[method](data)
     func_state += 1
 
-    if func_state >= len(data): # TODO: havoc length should be calculated based on performance
+    if func_state >= len(data): # TODO: havoc length should be calculated based on performance not on data length
         func_state = None
 
     return data, func_state
@@ -555,7 +561,7 @@ def splice(data, list_of_files, queue_path, func_state):
 
 class AFLFuzzer(object):
     def __init__(self, user_tokens_dict, queue_path):
-        global tokens_list
+        global tokens_list, tokens_list_length
         self.possible_stages = OrderedDict()
 
         self.list_of_functions = [bitflip_1bit, bitflip_2bits, bitflip_4bits,
@@ -569,6 +575,7 @@ class AFLFuzzer(object):
         self.total_func_count = len(self.list_of_functions)
         self.queue_path = queue_path
         tokens_list = user_tokens_dict
+        tokens_list_length = len(tokens_list)
 
     def mutate(self, data, list_of_files):
         if len(data) <= 0:

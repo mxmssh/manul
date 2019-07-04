@@ -66,7 +66,7 @@ class Command(object):
             self.process = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else:
             self.process = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                            preexec_fn=os.setsid) #TODO: unable to stop some targets with ctrl-c
+                                            preexec_fn=os.setsid)
         if self.target_ip:
             original_process = True
         INFO(1, None, None, "Target started, waiting for return")
@@ -130,15 +130,16 @@ class Fuzzer:
             ERROR("Weights in mutator_weights should have 10 in sum, check manul.config file")
 
         try:
-            fd = open(args.dict, 'r')
-            content = fd.readlines()
-            fd.close()
-            for line in content:
-                line = line.replace("\n", "")
-                if line.startswith("#") or line == "":
-                    continue
-                line = bytearray(line, "utf-8")
-                self.token_dict.append(line)
+            if args.dict:
+                fd = open(args.dict, 'r')
+                content = fd.readlines()
+                fd.close()
+                for line in content:
+                    line = line.replace("\n", "")
+                    if line.startswith("#") or line == "":
+                        continue
+                    line = bytearray(line, "utf-8")
+                    self.token_dict.append(line)
         except:
             WARNING(None, "Failed to parse dictionary file, dictionary is in invalid format or not accessible")
 
@@ -163,7 +164,7 @@ class Fuzzer:
         self.target_port = None
         self.target_protocol = None
         if args.target_ip_port:
-            self.target_ip = args.target_ip_port.split(':')[0] # todo check if input correct in main
+            self.target_ip = args.target_ip_port.split(':')[0] # todo check if ip:port is correct in main
             self.target_port = args.target_ip_port.split(':')[1]
             self.target_protocol = args.target_protocol
 
@@ -416,7 +417,7 @@ class Fuzzer:
                 INFO(1, None, self.log_file, "Output from target %s" % err_output)
                 ERROR("%s doesn't cover any path in the target, Make sure the binary is actually instrumented" % file_name)
 
-            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.virgin_bits, False, None)
+            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.virgin_bits, False)
             if ret == 0:
                 useless += 1
                 WARNING(self.log_file, "Test %s might be useless because it doesn't cover new paths in the target, consider removing it" % file_name)
@@ -431,12 +432,9 @@ class Fuzzer:
         self.update_stats()
 
 
-    def has_new_bits(self, trace_bits_as_str, update_virgin_bits, volatile_bytes, bitmap_to_compare, calibration,
-                     full_output_file_path):
+    def has_new_bits(self, trace_bits_as_str, update_virgin_bits, volatile_bytes, bitmap_to_compare, calibration):
 
         ret = 0
-
-        #print_bitmaps(bitmap_to_compare, trace_bits_as_str, full_output_file_path)
 
         if not calibration:
             hash_current = zlib.crc32(trace_bits_as_str) & 0xFFFFFFFF
@@ -526,7 +524,7 @@ class Fuzzer:
         INFO(1, None, self.log_file, "We have %d volatile bytes for this new finding" % len(volatile_bytes))
         # let's try to check for new coverage ignoring volatile bytes
         self.fuzzer_stats.stats['blacklisted_paths'] = len(volatile_bytes)
-        return self.has_new_bits(trace_bits_as_str, True, volatile_bytes, self.virgin_bits, True, None) # it means that we're returning result of the last run (might be wrong)
+        return self.has_new_bits(trace_bits_as_str, True, volatile_bytes, self.virgin_bits, True) # it means that we're returning result of the last run (might be wrong)
 
     def update_stats(self):
         for i, (k,v) in enumerate(self.fuzzer_stats.stats.items()):
@@ -559,7 +557,7 @@ class Fuzzer:
 
         return False
 
-    def is_critical_mac(self, exception_code): # todo; we need to verify that
+    def is_critical_mac(self, exception_code): # todo; we need to verify that on MacOS
         if exception_code == 0 or exception_code == 1 or \
            (IGNORE_ABORT and exception_code == signal.SIGABRT) or \
            exception_code == signal.SIGKILL or \
@@ -583,7 +581,7 @@ class Fuzzer:
            "core dumped" in err_str or "floating point exception" in err_str:
             return True
 
-        # TODO: ignore user specified signals in user_signal
+        # TODO: use user specified signals provided via config option: user_signal to ignore certain signals
         if sys.platform == "win32":
             return self.is_critical_win(err_code)
         elif sys.platform == "darwin":
@@ -716,7 +714,7 @@ class Fuzzer:
 
                         if not self.is_dumb_mode:
                             trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
-                            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.crash_bits, False, full_output_file_path)
+                            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.crash_bits, False)
                             if ret == 2:
                                 INFO(0, bcolors.BOLD + bcolors.OKGREEN, self.log_file, "Crash is unique")
                                 self.fuzzer_stats.stats['unique_crashes'] += 1
@@ -731,7 +729,7 @@ class Fuzzer:
                     # Reading the coverage
 
                     trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
-                    ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits, False, full_output_file_path) # we are not ready to update coverage at this stage due to volatile bytes
+                    ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits, False) # we are not ready to update coverage at this stage due to volatile bytes
                     if ret == 2:
                         INFO(1, None, self.log_file, "Input %s produces new coverage, calibrating" % file_name)
                         if self.calibrate_test_case(mutated_name) == 2:
@@ -792,17 +790,17 @@ def check_instrumentation(target_binary):
     return True
 
 
-def which(program):
-    def is_binary(fpath):
-        return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
+def which(target_binary):
+    def is_binary(target_binary):
+        return os.path.isfile(target_binary) and os.access(target_binary, os.X_OK)
 
-    fpath, fname = os.path.split(program)
+    fpath, fname = os.path.split(target_binary)
     if fpath:
-        if is_binary(program):
-            return program
+        if is_binary(target_binary):
+            return target_binary
     else:
         for path in os.environ["PATH"].split(os.pathsep):
-            exec_file = os.path.join(path, program)
+            exec_file = os.path.join(path, target_binary)
             if is_binary(exec_file):
                 return exec_file
 
@@ -812,7 +810,7 @@ def which(program):
 def check_binary(target_binary):
     binary_path = which(target_binary)
     if binary_path is None:
-        ERROR("Unable to find target binary %s" % target_binary)
+        ERROR("Unable to find binary %s required to run Manul" % target_binary)
 
 
 def get_available_id_for_backup(dir_name):
@@ -847,7 +845,7 @@ def configure_dbi(args, target_binary, is_debug):
                 dbi_tool_params += "-coverage_module %s " % target_lib
         if is_debug:
             dbi_tool_params += "-debug"
-    elif args.dbi == "pin": # TODO i#13: handle when dbi_tool_libs is None
+    elif args.dbi == "pin":
         if sys.platform == "win32":
             ERROR("Intel PIN DBI engine is not supported on Windows")
         if dbi_tool_libs is not None:
@@ -1014,7 +1012,7 @@ if __name__ == "__main__":
     printing.DEBUG_PRINT = args.debug
 
     binary_to_check = args.target_binary[0]
-    target_binary = binary_to_check.split(" ")[0] # TODO i#15: here we assume that our path to binary doesn't have spaces
+    target_binary = binary_to_check.split(" ")[0] # here we assume that our path to binary doesn't have spaces
 
     dbi_setup = None
     if args.dbi is not None:
@@ -1022,13 +1020,9 @@ if __name__ == "__main__":
 
     check_binary(target_binary) # check if our binary exists and is actually instrumented
 
-    #TODO: check that the fuzzer/fuzzers exist
-    #TODO: add third-party mutators
-    #check_binary("radamsa.exe")
-
     if not args.simple_mode and args.dbi is None and not check_instrumentation(target_binary):
         ERROR("Failed to find afl's instrumentation in the target binary, try to recompile or run manul in dumb mode")
-    # TODO i#16: check that our mutator actually exist
+
     if not os.path.isdir(args.input):
         ERROR("Input directory doesn't exist")
 
@@ -1046,6 +1040,14 @@ if __name__ == "__main__":
         os.rename(args.output, args.output + "_%d" % id)
         os.mkdir(args.output)
         INFO(0, None, None, "Done")
+
+    #if radamsa weight is not zero, check that we can actually execute it
+    if "radamsa:0" not in args.mutator_weights:
+        if sys.platform == "win32":
+            check_binary("radamsa.exe")
+        else:
+            check_binary("radamsa")
+
 
     files = allocate_files_per_jobs(args)
 
