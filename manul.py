@@ -602,6 +602,7 @@ class Fuzzer:
         now = int(round(time.time()))
         return "manul-%d-%d-%d_%s" % (now, self.fuzzer_id, iteration, file_name)
 
+
     def is_critical_win(self, exception_code):
 
         if exception_code == STATUS_CONTROL_C_EXIT:
@@ -612,21 +613,15 @@ class Fuzzer:
 
         return False
 
-    def is_critical_mac(self, exception_code): # todo; we need to verify that on MacOS
-        if exception_code == 0 or exception_code == 1 or \
-           (IGNORE_ABORT and exception_code == signal.SIGABRT) or \
-           exception_code == signal.SIGKILL or \
-           exception_code == signal.SIGUSR1 or \
-           exception_code == signal.SIGUSR2 or \
-           exception_code == signal.SIGALRM or \
-           exception_code == signal.SIGCHLD:
-            return False
+
+    def is_critical_mac(self, exception_code):
+        if exception_code in critical_signals_nix:
+            return True
+
         return True
 
-    def is_critifcal_linux(self, err_code):
-        if err_code in critical_signals_linux:
-            return True
-        if self.user_defined_signals and err_code in self.user_defined_signals:
+    def is_critifcal_linux(self, exception_code):
+        if exception_code in critical_signals_nix:
             return True
 
         return False
@@ -637,6 +632,9 @@ class Fuzzer:
             return True
 
         # TODO: use user specified signals provided via config option: user_signal to ignore certain signals
+        if self.user_defined_signals and err_code in self.user_defined_signals:
+            return True
+
         if sys.platform == "win32":
             return self.is_critical_win(err_code)
         elif sys.platform == "darwin":

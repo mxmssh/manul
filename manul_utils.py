@@ -37,10 +37,10 @@ PY3 = sys.version_info[0] == 3
 
 if not sys.platform == "win32":
     #https://github.com/torvalds/linux/blob/556e2f6020bf90f63c5dd65e9a2254be6db3185b/include/linux/signal.h#L330
-    critical_signals_linux = {signal.SIGQUIT, signal.SIGILL, signal.SIGTRAP, signal.SIGBUS, signal.SIGFPE, signal.SIGSEGV,
+    critical_signals_nix = {signal.SIGQUIT, signal.SIGILL, signal.SIGTRAP, signal.SIGBUS, signal.SIGFPE, signal.SIGSEGV,
                               signal.SIGXCPU, signal.SIGXFSZ, signal.SIGSYS} #,signal.SIGABRT
 else:
-    critical_signals_linux = {}
+    critical_signals_nix = {}
 
 class FuzzerStats:
     def __init__(self):
@@ -117,7 +117,7 @@ def get_list_of_idle_processes(timeout):
     for p in children:
         #enumerating targets without name python in them
         child = psutil.Process(p.pid)
-        if "python" in child.name() or "sh" == child.name(): # TODO: if target has python name than we can't stop it
+        if "python" in child.name() or "Python" in child.name() or "sh" == child.name(): # TODO: if target has python name we can't stop it
             continue
         created_at = child.create_time()
         elapsed = time.time() - created_at
@@ -149,7 +149,7 @@ def watchdog(timeout):
     if sys.platform == "win32":
         sig = signal.CTRL_BREAK_EVENT
     else:
-        sig = signal.SIGTERM # TODO: check on MacOS
+        sig = signal.SIGTERM
 
     while True:
         # getting list of running targets
