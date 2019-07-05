@@ -282,7 +282,7 @@ def dictionary_overwrite(data, func_state):
     token = tokens_list[func_state[0]]
     place = func_state[1]
 
-    if data_len <= len(token):
+    if data_len < len(token):
         return data, None
 
     data = data[:place] + bytearray(token) + data[place + len(token):]
@@ -477,14 +477,14 @@ def havoc_overwrite_randomly_block(data):
 # overwrite from dict
 def havoc_overwrite_with_dict(data):
     func_state = [RAND(len(tokens_list)), RAND(len(data))]
-    dictionary_overwrite(data, func_state)
+    data, func_state = dictionary_overwrite(data, func_state)
     return data
 
 
 # overwrite from dict
 def havoc_insert_with_dict(data):
     func_state = [RAND(len(tokens_list)), RAND(len(data))]
-    dictionary_insert(data, func_state)
+    data, func_state = dictionary_insert(data, func_state)
     return data
 
 #TODO: https://github.com/mirrorer/afl/blob/2fb5a3482ec27b593c57258baae7089ebdc89043/afl-fuzz.c#L6478
@@ -506,7 +506,7 @@ def havoc(data, func_state):
         data = func_to_choose[method](data)
     func_state += 1
 
-    if func_state >= len(data): # TODO: havoc length should be calculated based on performance not on data length
+    if func_state >= AFL_HAVOC_CYCLES: # TODO: havoc length should be calculated based on performance not on data length
         func_state = None
 
     return data, func_state
@@ -530,26 +530,25 @@ def splice(data, list_of_files, queue_path, func_state):
     else:
         file_name = list_of_files[file_id]
     picked_file_name = queue_path + "/" + file_name
-    if "manul" not in picked_file_name and "_mutated" not in picked_file_name:
-        del list_of_files[file_id]
-        return splice(data, list_of_files, queue_path, None)
+    #if "manul" not in picked_file_name and "_mutated" not in picked_file_name:
+    #    del list_of_files[file_id]
+    #    return splice(data, list_of_files, queue_path, None)
 
     content_target = extract_content(picked_file_name)
     content_target_len = len(content_target)
-
     if content_target_len < 2 or is_bytearrays_equal(data, content_target):
         del list_of_files[file_id]
         return splice(data, list_of_files, queue_path, None)
 
     f_diff, l_diff = locate_diffs(data, content_target, MIN(data_len, content_target_len))
 
-    if f_diff == 0 or l_diff < 2 or f_diff == l_diff:
+    if l_diff < 2 or f_diff == l_diff: # afl has f_diff == 0 but I believe we want to start with 0
         del list_of_files[file_id]
         return splice(data, list_of_files, queue_path, None)
 
     split_last_byte = f_diff + RAND(l_diff - f_diff)
     block = data[f_diff:f_diff+split_last_byte]
-    content_target = content_target[:f_diff] + block + content_target[f_diff+split_last_byte]
+    content_target = content_target[:f_diff] + block + content_target[f_diff+split_last_byte:]
     data = content_target
 
     data, res = havoc(data, 0)

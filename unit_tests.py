@@ -207,19 +207,71 @@ def test_interesting(data, iteration_id):
         print("interesting4 successed")
     return True
 
-
+tokens_list = [b"very_long_dict_string777777777777777", b"test", b"ext1", b"a"]
 def test_dict(data, iteration_id):
-    #todo finish it
+    global tokens_list
+    expected_output_overwrite = [b"AAAAAAAAA", b"Atest", b"AA", b"Aa"]
+    expected_output_insert = [b'very_long_dict_string777777777777777AAAAAAAAA', b'AtestAAA', b"AAext1", b"Aa"]
+    data_clean = copy.copy(data)
+
+    #call AFL init to initialize dictionary
+    afl_fuzzer = AFLFuzzer(tokens_list, None)
+
+    data, func_state = dictionary_overwrite(data, [iteration_id, iteration_id])
+    if data != expected_output_overwrite[iteration_id]:
+        print("test_dict_overwrite failed, output is %s" % data)
+    else:
+        print("test_dict_overwrite succeded")
+    data, func_state = dictionary_insert(data_clean, [iteration_id, iteration_id])
+    if data != expected_output_insert[iteration_id]:
+        print("test_dict_insert failed, output is %s" % data)
+    else:
+        print("test_dict_insert succeded")
     return True
 
-
 def test_havoc(data, iteration_id):
-    #todo finish it
+    print("starting havocs")
+    data = havoc_bitflip(data)
+    print("Bitflip:", data)
+    data = havoc_interesting_byte(data)
+    print("Interesting byte:", data)
+    data = havoc_interesting_2bytes(data)
+    print("Interesting 2 bytes:", data)
+    data = havoc_interesting_4bytes(data)
+    print("Interesting 4 bytes:", data)
+    data = havoc_randomly_add(data)
+    print("Randomly add:", data)
+    data = havoc_randomly_substract(data)
+    print("Randomly substract:", data)
+    data = havoc_randomly_add_2bytes(data)
+    print("Randomly add 2 bytes:", data)
+    data = havoc_randomly_substract_2bytes(data)
+    print("Randomly substract 2 bytes:", data)
+    data = havoc_randomly_add_4bytes(data)
+    print("Randomly add 4 bytes:", data)
+    data = havoc_randomly_substract_4bytes(data)
+    print("Randomly substract 4 bytes:", data)
+    data = havoc_remove_randomly_block(data)
+    print("Randomly remove block:", data)
+    data = havoc_clone_randomly_block(data)
+    print("Randomly clone block:", data)
+    data = havoc_overwrite_randomly_block(data)
+    print("Randomly overwrite block:", data)
+    data = havoc_overwrite_with_dict(data)
+    print("Randomly overwrite with dict:", data)
+    data = havoc_insert_with_dict(data)
+    print("Randomly insert with dict:", data)
+    print("all havocs succeded")
     return True
 
 
 def test_splice(data, iteration_id):
-    #todo finish it
+    # merge with manul.config or unit_tests.py :)
+    print("Starting splice")
+    queue_path = "./" # current path where we run this unit_tests.py
+    list_of_files = ["manul.config", "unit_tests.py"]
+    data, func_state = splice(data, list_of_files, queue_path, None)
+    print("Result of splice:", data)
     return True
 
 
@@ -240,7 +292,8 @@ if __name__ == "__main__":
     test_cycle(bytearray("AAAA", "utf-8")) # short string
     test_cycle(bytearray("AA", "utf-8")) # shorter string
     test_cycle(bytearray("A", "utf-8")) # the shortest string
-    if is_bytearrays_equal("AAAAAA", "AAAAAA") == False or is_bytearrays_equal("AAAAAAA", "BEBEBEBE") == True:
+
+    if is_bytearrays_equal(b"AAAAAA", b"AAAAAA") == False or is_bytearrays_equal(b"AAAAAAA", b"BEBEBEBE") == True:
         print("is_bytearray_equal failed")
     else:
         print("is_bytearray_equal succeded")
