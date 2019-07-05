@@ -187,8 +187,15 @@ class Fuzzer:
         # creating output dir structure
         self.output_path = args.output + "/%d" % fuzzer_id
         self.queue_path = self.output_path + "/queue"
+        self.mutate_file_path = self.output_path + "/mutations" # TODO: allow user to specify this path
         self.crashes_path = self.output_path + "/crashes"
         self.unique_crashes_path = self.crashes_path + "/unique"
+
+        self.enable_logging = args.logging_enable
+        self.log_file = None
+
+        self.user_sync_freq = args.sync_freq
+        self.sync_bitmap_freq = -1
 
         if not self.restore:
             try:
@@ -207,6 +214,10 @@ class Fuzzer:
                 os.mkdir(self.unique_crashes_path)
             except:
                 ERROR("Failed to create required output dir structure (unique crashes)")
+            try:
+                os.mkdir(self.mutate_file_path)
+            except:
+                ERROR("Failed to create output directory for mutated files")
 
         self.is_dumb_mode = args.simple_mode
         self.input_path = args.input
@@ -214,6 +225,17 @@ class Fuzzer:
 
         self.fuzzer_stats = FuzzerStats()
         self.stats_file = None
+        self.disable_save_stats = False # TODO: finish it
+
+        if not self.is_dumb_mode:
+            self.trace_bits = self.setup_shm()
+
+            for i in range(0, self.SHM_SIZE):
+                if self.virgin_bits[i] != 0xFF:
+                    self.global_map[i] = self.virgin_bits[i]
+                elif self.global_map[i] != 0xFF and self.virgin_bits[i] == 0xFF:
+                    self.virgin_bits[i] = self.global_map[i]
+
         if self.restore:
             if not isfile(self.output_path + "/fuzzer_stats"):
                 ERROR("Fuzzer stats file doesn't exist. Make sure your output is actual working dir of manul")
@@ -224,35 +246,29 @@ class Fuzzer:
             for line in content: # getting last line from file to restore ression
                 pass
             if line is None:
-                ERROR("Failed to restore fuzzer %d from stats. Invalid fuzzeR_stats format" % self.fuzzer_id)
+                ERROR("Failed to restore fuzzer %d from stats. Invalid fuzzer_stats format" % self.fuzzer_id)
 
             last = line[:-2] # skipping last symbol space and \n
             INFO(0, None, None, "Restoring last stats %s" % last)
             self.stats_file.close()
-            self.restore_session(last)
 
-            self.stats_file = open(self.output_path + "/fuzzer_stats", 'a')
-        else:
-            self.stats_file = open(self.output_path + "/fuzzer_stats", 'w')
+            bitmap = None
+            if not self.is_dumb_mode:
+                self.bitmap_file = open(self.output_path + "/fuzzer_bitmap", "rb")
+                bitmap = self.bitmap_file.read()
+                self.bitmap_file.close()
 
-        self.enable_logging = args.logging_enable
-        self.log_file = None
+            self.restore_session(last, bitmap)
 
-        self.user_sync_freq = args.sync_freq
-        self.sync_bitmap_freq = -1
+        if not self.disable_save_stats:
+            self.stats_file = open(self.output_path + "/fuzzer_stats", 'a+')
+            self.bitmap_file = open(self.output_path + "/fuzzer_bitmap", 'wb')
 
         if self.enable_logging:
             self.log_file = open(self.output_path + "/fuzzer_log", 'a')
 
-        if not self.is_dumb_mode:
-            self.trace_bits = self.setup_shm()
-
-            for i in range(0, self.SHM_SIZE):
-                if self.virgin_bits[i] != 0xFF:
-                    self.global_map[i] = self.virgin_bits[i]
-                elif self.global_map[i] != 0xFF and self.virgin_bits[i] == 0xFF:
-                    self.virgin_bits[i] = self.global_map[i]
         self.init_mutators()
+
 
     def sync_bitmap(self):
         self.sync_bitmap_freq += 1
@@ -267,14 +283,32 @@ class Fuzzer:
                 self.virgin_bits[i] = self.global_map[i]
 
 
-    def restore_session(self, last):
+    def restore_session(self, last, bitmap):
         # parse previously saved stats line
         last = last.split(" ")[1:] # cut timestamp
         for index, stat in enumerate(last):
             stat = float(stat.split(":")[1])  # taking actual value
-            # TODO: i#10 This is not compatible with Python 3.
-            stat_name = self.fuzzer_stats.stats.items()[index][0]
+            if PY3:
+                stat_name = list(self.fuzzer_stats.stats.items())[index][0]
+            else:
+                stat_name = self.fuzzer_stats.stats.items()[index][0]
             self.fuzzer_stats.stats[stat_name] = stat
+
+        if bitmap:
+            #restoring and syncronizing bitmap
+            '''for i in range(0, SHM_SIZE):
+                self.virgin_bits[i] = bitmap[i]
+                self.sync_bitmap_freq = self.user_sync_freq # little trick to enable syncronization
+                self.sync_bitmap()
+                self.sync_bitmap_freq = 0'''
+
+            # restoring queue
+            final_list_of_files = list()
+            new_files = [f for f in os.listdir(self.queue_path) if os.path.isfile(os.path.join(self.queue_path, f))]
+            for file_name in new_files:
+                final_list_of_files.append((1, file_name)) # this is how we add new files
+
+            self.list_of_files = self.list_of_files + final_list_of_files
 
         if self.determenistic: # skip already seen seeds
             for i in range(0, self.fuzzer_stats.stats['executions']):
@@ -285,10 +319,18 @@ class Fuzzer:
         if self.stats_file is None:
             return
 
+        self.bitmap_file.write(string_at(self.trace_bits, SHM_SIZE))
+
         self.stats_file.write(str(time.time()) + " ")
         for index, (k,v) in enumerate(self.fuzzer_stats.stats.items()):
             self.stats_file.write("%d:%.2f " % (index, v))
         self.stats_file.write("\n")
+        self.stats_file.flush()
+
+        # saving AFL state
+        for file_name in self.list_of_files:
+            if not isinstance(file_name, string_types) : file_name = file_name[1]
+            self.afl_fuzzer[file_name].save_state(self.output_path)
 
 
     def prepare_cmd_to_run(self, target_file_path):
@@ -385,7 +427,10 @@ class Fuzzer:
 
         #init AFL fuzzer state
         for file_name in self.list_of_files:
-            self.afl_fuzzer[file_name] = afl_fuzz.AFLFuzzer(self.token_dict, self.queue_path) #assign AFL for each file
+            if not isinstance(file_name, string_types): file_name = file_name[1]
+            self.afl_fuzzer[file_name] = afl_fuzz.AFLFuzzer(self.token_dict, self.queue_path, file_name) #assign AFL for each file
+            if self.restore:
+                self.afl_fuzzer[file_name].restore_state(self.output_path)
 
 
     def dry_run(self):
@@ -394,10 +439,17 @@ class Fuzzer:
 
         useless = 0
         for file_name in self.list_of_files:
+            # if we have tuple and not string here it means that this file was found during execution and located in queue
             self.current_file_name = file_name
+            if not isinstance(file_name, string_types):
+                file_name = file_name[1]
+                full_input_file_path = self.queue_path + "/" + file_name
+            else:
+                full_input_file_path = self.input_path + "/" + file_name
+
             memset(self.trace_bits, 0x0, SHM_SIZE)
 
-            cmd = self.prepare_cmd_to_run(self.input_path + "/" + file_name)
+            cmd = self.prepare_cmd_to_run(full_input_file_path)
 
             INFO(1, bcolors.BOLD, self.log_file, "Launching %s" % cmd)
 
@@ -444,7 +496,7 @@ class Fuzzer:
             if not isinstance(self.current_file_name, string_types):
                 self.current_file_name = self.current_file_name[1]
 
-            prev_hash = self.prev_hashes[self.current_file_name]
+            prev_hash = self.prev_hashes.get(self.current_file_name, None)
 
             if prev_hash and hash_current == prev_hash:
                 return 0
@@ -496,7 +548,7 @@ class Fuzzer:
             if self.target_ip: # in net mode we only need a test case
                 cmd = self.prepare_cmd_to_run(file_name)
             else:
-                cmd = self.prepare_cmd_to_run(self.queue_path + "/" + file_name)
+                cmd = self.prepare_cmd_to_run(self.mutate_file_path + "/" + file_name)
 
             INFO(1, None, self.log_file, cmd)
             command = Command(cmd, self.target_ip, self.target_port, self.target_protocol)
@@ -526,7 +578,8 @@ class Fuzzer:
         INFO(1, None, self.log_file, "We have %d volatile bytes for this new finding" % len(volatile_bytes))
         # let's try to check for new coverage ignoring volatile bytes
         self.fuzzer_stats.stats['blacklisted_paths'] = len(volatile_bytes)
-        return self.has_new_bits(trace_bits_as_str, True, volatile_bytes, self.virgin_bits, True) # it means that we're returning result of the last run (might be wrong)
+
+        return self.has_new_bits(trace_bits_as_str, True, volatile_bytes, self.virgin_bits, True) # result of the last run
 
     def update_stats(self):
         for i, (k,v) in enumerate(self.fuzzer_stats.stats.items()):
@@ -634,7 +687,7 @@ class Fuzzer:
                 if not mutator:
                     ERROR("Unable to load user provided mutator %s at mutate_input stage" % name)
                 data = extract_content(full_input_file_path)
-                data = mutator.mutate(data) # todo handle potential errors here
+                data = mutator.mutate(data)
                 if not data:
                     ERROR("No data returned from user provided mutator. Exciting.")
                 save_content(data, full_output_file_path)
@@ -674,7 +727,7 @@ class Fuzzer:
                     memset(self.trace_bits, 0x0, SHM_SIZE) # preparing our bitmap for new run
 
                 mutated_name = file_name + "_mutated"
-                full_output_file_path = self.queue_path + "/" + mutated_name
+                full_output_file_path = self.mutate_file_path + "/" + mutated_name
 
                 # command to generate new input using one of selected mutators
                 res = self.mutate_input(file_name, full_input_file_path, full_output_file_path)
@@ -688,8 +741,8 @@ class Fuzzer:
                 else:
                     cmd = self.prepare_cmd_to_run(full_output_file_path)
                     first_iteration = False
-
                     INFO(1, None, self.log_file, "Running %s" % cmd)
+
                 timer_start = timer()
 
                 command = Command(cmd, self.target_ip, self.target_port, self.target_protocol)
@@ -735,20 +788,25 @@ class Fuzzer:
                     # Reading the coverage
 
                     trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
-                    ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits, False) # we are not ready to update coverage at this stage due to volatile bytes
+                    # we are not ready to update coverage at this stage due to volatile bytes
+                    ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits, False)
                     if ret == 2:
                         INFO(1, None, self.log_file, "Input %s produces new coverage, calibrating" % file_name)
                         if self.calibrate_test_case(mutated_name) == 2:
                             self.fuzzer_stats.stats['new_paths'] += 1
                             self.fuzzer_stats.stats['last_path_time'] = time.time()
                             INFO(1, None, self.log_file, "Calibration finished sucessfully. Saving new finding")
+
                             new_coverage_file_name = self.generate_new_name(file_name)
                             INFO(1, None, self.log_file, "Copying %s to %s" % (full_output_file_path,
                                  self.queue_path + "/" + new_coverage_file_name))
+
                             shutil.copy(full_output_file_path, self.queue_path + "/" + new_coverage_file_name)
+
                             new_files.append((1, new_coverage_file_name))
                             # for each new file assign new AFLFuzzer
-                            self.afl_fuzzer[new_coverage_file_name] = afl_fuzz.AFLFuzzer(self.token_dict, self.queue_path)
+                            self.afl_fuzzer[new_coverage_file_name] = afl_fuzz.AFLFuzzer(self.token_dict, self.queue_path,
+                                                                                         new_coverage_file_name)
                             self.prev_hashes[new_coverage_file_name] = None
 
                 self.update_stats()
@@ -969,6 +1027,7 @@ def parse_args():
     parser.add_argument('--mutator_weights', default = None, help = argparse.SUPPRESS)
     parser.add_argument('--user_signals', default = None, help = argparse.SUPPRESS)
     parser.add_argument("--dict", default = None, help = argparse.SUPPRESS)
+    parser.add_argument("--restore", default = None, action = 'store_true', help = argparse.SUPPRESS)
 
     parser.add_argument('target_binary', nargs='*', help="The target binary and options to be executed.")
 
@@ -990,9 +1049,6 @@ def parse_args():
     modes_count = 0
     if args.simple_mode and args.dbi is not None:
         ERROR("Options mismatch. Simple mode can't be executed with DBI mode together (check manul.config).")
-
-    if args.restore and not args.simple_mode:
-        ERROR("Session restore for coverage-guided mode is not yet supported")
 
     if not args.mutator_weights:
         ERROR("At least one mutator should be specified")
@@ -1106,17 +1162,6 @@ if __name__ == "__main__":
                 if not t.is_alive():
                     threads_inactive += 1
                     WARNING(None, "Fuzzer %d unexpectedly terminated" % i)
-                    if not args.simple_mode:
-                        continue
-                    WARNING(None, "Trying to restore %d fuzzer" % i)
-                    files_list = files[i]
-                    stats_array = all_threads_stats[i]
-                    t = multiprocessing.Process(target=run_fuzzer_instance,  # TODO: try to restore fuzzing session
-                                                args=(files_list, i, virgin_bits, args, stats_array, True,
-                                                      crash_bits, dbi_setup))
-                    t.setDaemon(True)
-                    t.start()
-                    all_threads_handles[i] = t
 
             if sync_t is not None and not sync_t.alive():
                 WARNING(None, "Syncronization thread is not alive")

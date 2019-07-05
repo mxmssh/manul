@@ -33,6 +33,8 @@ SHM_SIZE = 65535
 IGNORE_ABORT = True
 UPDATE = True
 
+PY3 = sys.version_info[0] == 3
+
 if not sys.platform == "win32":
     #https://github.com/torvalds/linux/blob/556e2f6020bf90f63c5dd65e9a2254be6db3185b/include/linux/signal.h#L330
     critical_signals_linux = {signal.SIGQUIT, signal.SIGILL, signal.SIGTRAP, signal.SIGBUS, signal.SIGFPE, signal.SIGSEGV,

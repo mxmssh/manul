@@ -235,12 +235,22 @@ def test_cycle(data):
     test_splice(copy.copy(data), iteration)
     iteration += 1
 
+
+def extra_test_havoc_remove_randomly_block():
+    data_extra = b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    for i in range(0, 500):
+        data_extra = havoc_remove_randomly_block(data_extra)
+        if data_extra == b"":
+            print("extra_test_havoc_remove_randomly_block failed!")
+
 if __name__ == "__main__":
     test_cycle(bytearray("AAAAAAAAA", "utf-8")) # regular string
     test_cycle(bytearray("AAAA", "utf-8")) # short string
     test_cycle(bytearray("AA", "utf-8")) # shorter string
     test_cycle(bytearray("A", "utf-8")) # the shortest string
-    if is_bytearrays_equal("AAAAAA", "AAAAAA") == False or is_bytearrays_equal("AAAAAAA", "BEBEBEBE") == True:
+    extra_test_havoc_remove_randomly_block()
+
+    if is_bytearrays_equal(b"AAAAAA", b"AAAAAA") == False or is_bytearrays_equal(b"AAAAAAA", b"BEBEBEBE") == True:
         print("is_bytearray_equal failed")
     else:
         print("is_bytearray_equal succeded")

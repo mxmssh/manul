@@ -133,7 +133,10 @@ def print_per_thread(all_threads_stats, bytes_cov, time_elapsed, active_threads_
     for i, thread_stat in enumerate(all_threads_stats):
         stability = 0.0
         for j, element in enumerate(thread_stat):
-            (k, v) = stats.stats.items()[j] # v always 0
+            if PY3:
+                (k, v) = list(stats.stats.items())[j] # v always 0
+            else:
+                (k, v) = stats.stats.items()[j] # v always 0
             if k == 'blacklisted_paths': stability = (100 - (element * 100 / float(SHM_SIZE)))
             stats.stats[k] = element
 
