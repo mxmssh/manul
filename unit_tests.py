@@ -215,7 +215,7 @@ def test_dict(data, iteration_id):
     data_clean = copy.copy(data)
 
     #call AFL init to initialize dictionary
-    afl_fuzzer = AFLFuzzer(tokens_list, None)
+    AFLFuzzer(tokens_list, None, "test_file")
 
     data, func_state = dictionary_overwrite(data, [iteration_id, iteration_id])
     if data != expected_output_overwrite[iteration_id]:
@@ -270,7 +270,7 @@ def test_splice(data, iteration_id):
     # merge with manul.config or unit_tests.py :)
     print("Starting splice")
     queue_path = "./" # current path where we run this unit_tests.py
-    list_of_files = ["manul.config", "unit_tests.py"]
+    list_of_files = [(1, "manul.config"), (1, "unit_tests.py")]
     data, func_state = splice(data, list_of_files, queue_path, None)
     print("Result of splice:", data)
     return True
