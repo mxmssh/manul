@@ -319,8 +319,6 @@ class Fuzzer:
         if self.stats_file is None:
             return
 
-        self.bitmap_file.write(string_at(self.trace_bits, SHM_SIZE))
-
         self.stats_file.write(str(time.time()) + " ")
         for index, (k,v) in enumerate(self.fuzzer_stats.stats.items()):
             self.stats_file.write("%d:%.2f " % (index, v))
