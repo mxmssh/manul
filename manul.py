@@ -1129,7 +1129,7 @@ if __name__ == "__main__":
                                                                       args.restore, crash_bits, dbi_setup))
         t.start()
         all_threads_stats.append(stats_array)
-        #all_threads_handles.append(t)
+        all_threads_handles.append(t)
 
     INFO(0, None, None, "%d fuzzer instances sucessfully launched" % args.nfuzzers)
 
