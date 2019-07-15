@@ -154,7 +154,6 @@ class Fuzzer:
             self.user_defined_signals = args.user_signals.split(",")
         else:
             self.user_defined_signals = None
-
         if dbi_setup:
             self.dbi_engine_path = dbi_setup[0]
             self.dbi_tool_path = dbi_setup[1]
@@ -629,7 +628,6 @@ class Fuzzer:
            "core dumped" in err_str or "floating point exception" in err_str:
             return True
 
-        # TODO: use user specified signals provided via config option: user_signal to ignore certain signals
         if self.user_defined_signals and err_code in self.user_defined_signals:
             return True
 
@@ -896,7 +894,6 @@ def configure_dbi(args, target_binary, is_debug):
 
     dbi_tool_params = ""
     if args.dbi == "dynamorio":
-        #TODO i#12: corner case is not handled here
         dbi_tool_params += "-coverage_module %s " % ntpath.basename(target_binary)
         if dbi_tool_libs is not None:
             for target_lib in dbi_tool_libs.split(","):
