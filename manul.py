@@ -631,7 +631,7 @@ class Fuzzer:
         if exception_code in critical_signals_nix:
             return True
 
-        return True
+        return False
 
     def is_critifcal_linux(self, exception_code):
         if exception_code in critical_signals_nix:
