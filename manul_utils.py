@@ -138,7 +138,7 @@ def kill_all():
         except psutil.NoSuchProcess as exc:
             pass # already dead
 
-def watchdog(timeout):
+def watchdog(timeout): # used only in python2
     '''
     Watchdog runs infinitely and kills all idle processes
     :param timeout:

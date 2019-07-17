@@ -51,37 +51,43 @@ original_process = None
 
 
 class Command(object):
-    def __init__(self, cmd, target_ip, target_port, target_protocol):
-        self.cmd = cmd
+    def __init__(self, target_ip, target_port, target_protocol, timeout):
         self.process = None
         self.out = None
         self.err = None
+        self.timeout = timeout
         self.target_ip = target_ip
         self.target_port = target_port
-        self.target_protocol = target_protocol #TODO: it would be better to init this Command class once at dry run and run it over and over
+        self.target_protocol = target_protocol
 
-    def exec_command(self):
+    def exec_command(self, cmd):
         global original_process
         if sys.platform == "win32":
-            self.process = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else:
-            self.process = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                             preexec_fn=os.setsid)
         if self.target_ip:
             original_process = True
         INFO(1, None, None, "Target started, waiting for return")
 
-        self.out, self.err = self.process.communicate() # TODO: in python 3 we can put timeout here and avoid watchdog
+        if PY3:
+            try:
+                self.out, self.err = self.process.communicate(timeout=self.timeout)
+            except subprocess.TimeoutExpired as exc:
+                WARNING(None, "Timeout for %s" % cmd)
+        else:
+            self.out, self.err = self.process.communicate() # FYI: do we want to drop python2 support because of this?
 
         if self.target_ip:
             original_process = (self.out, self.err, self.process.returncode)
 
-    def run(self):
+    def run(self, cmd):
         global original_process
 
         if self.target_ip:
             if not original_process: #is it a first run ?
-                self.exec_command()
+                self.exec_command(cmd)
                 time.sleep(0.5) #TODO: introduce user-defined sleep
                 self.cmd= self.cmd.split(" ")[1] # TODO: fix it!!!!!!!!!
                 return self.run()
@@ -94,7 +100,7 @@ class Command(object):
                     return returncode, err
                 return 0, ""
 
-        self.exec_command()
+        self.exec_command(cmd)
 
         if isinstance(self.err, (bytes, bytearray)):
             self.err = self.err.decode("utf-8", 'replace')
@@ -186,7 +192,11 @@ class Fuzzer:
         # creating output dir structure
         self.output_path = args.output + "/%d" % fuzzer_id
         self.queue_path = self.output_path + "/queue"
-        self.mutate_file_path = self.output_path + "/mutations" # TODO: allow user to specify this path
+        if not args.custom_path:
+            self.mutate_file_path = self.output_path + "/mutations"
+        else:
+            self.mutate_file_path = args.custom_path
+
         self.crashes_path = self.output_path + "/crashes"
         self.unique_crashes_path = self.crashes_path + "/unique"
 
@@ -213,10 +223,12 @@ class Fuzzer:
                 os.mkdir(self.unique_crashes_path)
             except:
                 ERROR("Failed to create required output dir structure (unique crashes)")
-            try:
-                os.mkdir(self.mutate_file_path)
-            except:
-                ERROR("Failed to create output directory for mutated files")
+
+            if not args.custom_path:
+                try:
+                    os.mkdir(self.mutate_file_path)
+                except:
+                    ERROR("Failed to create output directory for mutated files")
 
         self.is_dumb_mode = args.simple_mode
         self.input_path = args.input
@@ -224,7 +236,7 @@ class Fuzzer:
 
         self.fuzzer_stats = FuzzerStats()
         self.stats_file = None
-        self.disable_save_stats = False # TODO: finish it
+        self.disable_save_stats = args.no_stats
 
         if not self.is_dumb_mode:
             self.trace_bits = self.setup_shm()
@@ -435,6 +447,7 @@ class Fuzzer:
         INFO(0, bcolors.BOLD + bcolors.HEADER, self.log_file, "Performing dry run")
 
         useless = 0
+        command = Command(self.target_ip, self.target_port, self.target_protocol, self.timeout)
         for file_name in self.list_of_files:
             # if we have tuple and not string here it means that this file was found during execution and located in queue
             self.current_file_name = file_name
@@ -450,12 +463,11 @@ class Fuzzer:
 
             INFO(1, bcolors.BOLD, self.log_file, "Launching %s" % cmd)
 
-            command = Command(cmd, self.target_ip, self.target_port, self.target_protocol)
-            err_code, err_output = command.run()
+            err_code, err_output = command.run(cmd)
             if err_code != 0:
                 INFO(1, None, self.log_file, "Initial input %s triggers exception in the target" % file_name)
                 if self.is_critical(err_output, err_code):
-                    WARNING(self.log_file, "Initial input %s leads target to crash (did you disable leak sanitizer?). Enable -d or -l to check actual output" % file_name)
+                    WARNING(self.log_file, "Initial input %s leads target to crash (did you disable leak sanitizer?). Enable --debug to check actual output" % file_name)
                     INFO(1, None, self.log_file, err_output)
                 elif self.is_problem_with_config(err_code, err_output):
                     WARNING(self.log_file, "Problematic file %s" % file_name)
@@ -466,6 +478,8 @@ class Fuzzer:
             non_zeros = [x for x in trace_bits_as_str if x != 0x0]
             if len(non_zeros) == 0:
                 INFO(1, None, self.log_file, "Output from target %s" % err_output)
+                if "is for the wrong architecture" in err_output:
+                    ERROR("You should run 32-bit drrun for 32-bit targets and 64-bit drrun for 64-bit targets")
                 ERROR("%s doesn't cover any path in the target, Make sure the binary is actually instrumented" % file_name)
 
             ret = self.has_new_bits(trace_bits_as_str, True, list(), self.virgin_bits, False)
@@ -538,6 +552,8 @@ class Fuzzer:
             else:
                 bitmap_to_compare[i] = ord(trace_bits_as_str[i])
 
+        command = Command(self.target_ip, self.target_port, self.target_protocol, self.timeout)
+
         for i in range(0, self.CALIBRATIONS_COUNT):
             INFO(1, None, self.log_file, "Calibrating %s %d" % (file_name, i))
 
@@ -548,15 +564,15 @@ class Fuzzer:
                 cmd = self.prepare_cmd_to_run(self.mutate_file_path + "/" + file_name)
 
             INFO(1, None, self.log_file, cmd)
-            command = Command(cmd, self.target_ip, self.target_port, self.target_protocol)
+
             if self.cmd_fuzzing:
                 try:
-                    err_code, err_output = command.run()
+                    err_code, err_output = command.run(cmd)
                 except TypeError:
                     WARNING("Failed to send this input over command line into the target")
                     continue
             else:
-                err_code, err_output = command.run()
+                err_code, err_output = command.run(cmd)
 
             if err_code > 0:
                 INFO(1, None, self.log_file, "Target raised exception during calibration for %s" % file_name)
@@ -701,6 +717,8 @@ class Fuzzer:
 
         start_time = timer()
 
+        command = Command(self.target_ip, self.target_port, self.target_protocol, self.timeout)
+
         while True: # never return
             new_files = list() # empty the list
             elapsed = 0
@@ -739,21 +757,19 @@ class Fuzzer:
 
                 timer_start = timer()
 
-                command = Command(cmd, self.target_ip, self.target_port, self.target_protocol)
-
                 if self.cmd_fuzzing:
                     try:
-                        exc_code, err_output = command.run()
+                        exc_code, err_output = command.run(cmd)
                     except TypeError:
                         WARNING("Failed to give this input from bash into the target")
                         continue
                 else:
-                    exc_code, err_output = command.run()
+                    exc_code, err_output = command.run(cmd)
 
                 self.fuzzer_stats.stats['executions'] += 1.0
                 elapsed += (timer() - timer_start)
 
-                if exc_code != 0:
+                if exc_code and exc_code != 0:
                     self.fuzzer_stats.stats['exceptions'] += 1
                     INFO(1, None, self.log_file, "Target raised exception and returns 0x%x error code" % (exc_code))
 
@@ -914,6 +930,7 @@ def configure_dbi(args, target_binary, is_debug):
             dbi_tool_params += " -libs %s" % dbi_config_file_path
     else:
         ERROR("Unknown dbi engine/option specified. Intel PIN or DynamoRIO are only supported")
+
     dbi_setup = (dbi_engine_path, dbi_tool_path, dbi_tool_params)
     return dbi_setup
 
@@ -1021,6 +1038,8 @@ def parse_args():
     parser.add_argument('--user_signals', default = None, help = argparse.SUPPRESS)
     parser.add_argument("--dict", default = None, help = argparse.SUPPRESS)
     parser.add_argument("--restore", default = None, action = 'store_true', help = argparse.SUPPRESS)
+    parser.add_argument("--no_stats", default = None, action = "store_true", help = argparse.SUPPRESS)
+    parser.add_argument("--custom_path", default = None, help=argparse.SUPPRESS)
 
     parser.add_argument('target_binary', nargs='*', help="The target binary and options to be executed.")
 
@@ -1039,7 +1058,7 @@ def parse_args():
 
     if "@@" not in args.target_binary[0]:
         ERROR("Your forgot to specify @@ for your target. Call manul.py -h for more details")
-    modes_count = 0
+
     if args.simple_mode and args.dbi is not None:
         ERROR("Options mismatch. Simple mode can't be executed with DBI mode together (check manul.config).")
 
@@ -1052,6 +1071,9 @@ def parse_args():
         ERROR("Invalid protocol. Should be tcp or udp.")
     if args.target_ip_port and args.nfuzzers > 1:
         ERROR("Multi-threaded network fuzzing is not supported, yet")
+
+    if args.custom_path and not os.path.isdir(args.custom_path):
+        ERROR("Custom path provided does not exist or not a directory")
 
     if args.dict:
         if not os.path.isfile(args.dict):
@@ -1144,9 +1166,10 @@ if __name__ == "__main__":
         sync_t.setDaemon(True)
         sync_t.start()
 
-    watchdog_t = threading.Thread(target=watchdog, args=(args.timeout,))
-    watchdog_t.setDaemon(True)
-    watchdog_t.start()
+    if not PY3:
+        watchdog_t = threading.Thread(target=watchdog, args=(args.timeout,))
+        watchdog_t.setDaemon(True)
+        watchdog_t.start()
 
     try:
         while True:

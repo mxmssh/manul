@@ -1,6 +1,3 @@
-import os
-import sys
-
 '''
 This is an example of third-party mutator plugin. Manul will load and call mutate for all files provided.
 '''
