@@ -76,6 +76,7 @@ class Command(object):
                 self.out, self.err = self.process.communicate(timeout=self.timeout)
             except subprocess.TimeoutExpired as exc:
                 WARNING(None, "Timeout for %s" % cmd)
+                kill_all(self.process.pid)
         else:
             self.out, self.err = self.process.communicate() # FYI: do we want to drop python2 support because of this?
 
@@ -1197,6 +1198,6 @@ if __name__ == "__main__":
             time.sleep(STATS_FREQUENCY)
     except (KeyboardInterrupt, SystemExit):
         INFO(0, None, None, "Stopping all fuzzers and threads")
-        kill_all()
+        kill_all(os.getpid())
         INFO(0, None, None, "Stopped, exiting")
         sys.exit()

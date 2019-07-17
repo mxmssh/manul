@@ -125,18 +125,21 @@ def get_list_of_idle_processes(timeout):
             ids.append(p)
     return ids
 
-def kill_all():
-    pid = os.getpid()
+def kill_process(p):
+    try:
+        if sys.platform == "win32":
+            p.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            p.send_signal(signal.SIGKILL)
+    except psutil.NoSuchProcess:
+        pass
+
+def kill_all(pid):
     parent = psutil.Process(pid)
     children = parent.children(recursive=True)
     for p in children:
-        try:
-            if sys.platform == "win32":
-                p.send_signal(signal.CTRL_BREAK_EVENT)
-            else:
-                p.send_signal(signal.SIGKILL)
-        except psutil.NoSuchProcess as exc:
-            pass # already dead
+        kill_process(p)
+    kill_process(parent)
 
 def watchdog(timeout): # used only in python2
     '''
