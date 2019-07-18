@@ -128,7 +128,7 @@ def get_list_of_idle_processes(timeout):
 def kill_process(p):
     try:
         if sys.platform == "win32":
-            p.send_signal(signal.CTRL_BREAK_EVENT)
+            p.kill()
         else:
             p.send_signal(signal.SIGKILL)
     except psutil.NoSuchProcess:
