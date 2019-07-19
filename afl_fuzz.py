@@ -618,7 +618,7 @@ class AFLFuzzer(object):
         INFO(1, None, None, "Loading AFL state from %s"  % (output_path + "/afl_state_" + self.file_name))
         try:
             fd = open(output_path + "/afl_state_%s" % self.file_name, 'r')
-        except FileNotFoundError as err:
+        except FileNotFoundError:
             WARNING(None, "Unable to find %s file" % output_path + "/afl_state_%s" % self.file_name)
             return # it can happen when we just found the file and user raised ctrl+c
         if not fd:
@@ -650,7 +650,8 @@ class AFLFuzzer(object):
         INFO(1, None, None, "Running %s stage of AFL mutator" % self.current_function)
 
         if (self.current_function_id % self.total_func_count) == (self.total_func_count - 1): # if splice
-            data, self.current_result = self.current_function(data, list_of_files, self.queue_path, self.current_result)
+            # FYI: we are sending copy of list_of_files instead of actual list_of_files in slice
+            data, self.current_result = self.current_function(data, list(list_of_files), self.queue_path, self.current_result)
         else:
             data, self.current_result = self.current_function(data, self.current_result)
 

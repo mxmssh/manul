@@ -117,7 +117,7 @@ def get_list_of_idle_processes(timeout):
     for p in children:
         #enumerating targets without name python in them
         child = psutil.Process(p.pid)
-        if "python" in child.name() or "Python" in child.name() or "sh" == child.name(): # TODO: if target has python name we can't stop it
+        if "python" in child.name() or "Python" in child.name() or "sh" == child.name(): # FYI: if target has python name we can't stop it
             continue
         created_at = child.create_time()
         elapsed = time.time() - created_at
@@ -125,8 +125,18 @@ def get_list_of_idle_processes(timeout):
             ids.append(p)
     return ids
 
-def kill_all():
-    pid = os.getpid()
+def is_alive(pid):
+    if psutil.pid_exists(pid):
+        # alive but zombie ?
+        proc = psutil.Process(pid)
+        if proc.status() == psutil.STATUS_ZOMBIE:
+            kill_all(pid) # avoid Zombies in our environment
+            return False
+        return True
+    else:
+        return False
+
+def kill_all(pid):
     parent = psutil.Process(pid)
     children = parent.children(recursive=True)
     for p in children:
@@ -149,7 +159,7 @@ def watchdog(timeout): # used only in python2
     if sys.platform == "win32":
         sig = signal.CTRL_BREAK_EVENT
     else:
-        sig = signal.SIGTERM
+        sig = signal.SIGTERM # FYI: sometimes it might be handled by the target. sigkill can cause FP?
 
     while True:
         # getting list of running targets
@@ -158,7 +168,7 @@ def watchdog(timeout): # used only in python2
             for pid in proc_ids:
                 target_id = pid.pid
                 p = psutil.Process(pid.pid)
-                printing.INFO(0, None, None, "Sending SIGTERM signal to %d %s" % (target_id, pid.name()))
+                printing.INFO(0, None, None, "Sending SIGKILL signal to %d %s" % (target_id, pid.name()))
                 p.send_signal(sig)
         except psutil.NoSuchProcess as exc:
             pass # already dead
@@ -193,6 +203,9 @@ def save_content(data, output_file_path):
     return 1
 
 def is_bytearrays_equal(data1, data2):
+    if not PY3:
+        data1 = data1.decode()
+        data2 = data2.decode()
     hash1 = zlib.crc32(data1)
     hash2 = zlib.crc32(data2)
     if hash1 != hash2:

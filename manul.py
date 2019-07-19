@@ -44,11 +44,12 @@ else:
 import subprocess, threading
 import signal
 
-#TODO: communication with process + error codes would be better to implement using AFL's instrumentation code
-# and shared memory
+#TODO: communication with process + error codes might be better to implement using AFL's instrumentation code
+# and shared memory. We also need AFL's forkserver
 
-original_process = None
-
+net_process_is_up = None
+net_init_timeout = 0
+net_sleep_between_cases = 0
 
 class Command(object):
     def __init__(self, target_ip, target_port, target_protocol, timeout):
@@ -56,49 +57,73 @@ class Command(object):
         self.out = None
         self.err = None
         self.timeout = timeout
-        self.target_ip = target_ip
-        self.target_port = target_port
-        self.target_protocol = target_protocol
+        if target_ip:
+            self.target_ip = target_ip
+            self.target_port = int(target_port)
+            self.target_protocol = target_protocol
+        self.net_class = None
 
-    def exec_command(self, cmd):
-        global original_process
+    def init_target_server(self, cmd):
+        global net_process_is_up
         if sys.platform == "win32":
             self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else:
             self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                             preexec_fn=os.setsid)
-        if self.target_ip:
-            original_process = True
+        if not is_alive(self.process.pid):
+            ERROR("Failed to start target server error code = %d, output = %s" % (self.process.returncode, self.process.stdout))
+
+        net_process_is_up = True # TODO: in future our handler injected in the target will tell us what's going on
+
+        time.sleep(net_init_timeout)
+
+    def net_send_data_to_target(self, data, net_cmd):
+        global net_process_is_up
+
+        if not net_process_is_up:
+            INFO(1, None, None, "Target network server is down, starting")
+            self.init_target_server(net_cmd)
+            self.net_class = manul_network.Network(self.target_ip, self.target_port, self.target_protocol)
+
+        if not net_process_is_up:  # is it the first run ?
+            ERROR("The target network application is not started, aborting")
+
+        self.net_class.send_test_case(data)
+
+        time.sleep(net_sleep_between_cases)
+
+        if not is_alive(self.process.pid):
+            INFO(1, None, None, "Target is dead")
+            if sys.platform == "win32":
+                returncode = EXCEPTION_FIRST_CRITICAL_CODE  # just take the first critical
+            else:
+                returncode = 11
+            net_process_is_up = False
+            self.net_class = None
+
+            return returncode, "[Manul message] Target is dead"
+
+        return 0, ""
+
+    def exec_command(self, cmd):
+        if sys.platform == "win32":
+            self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        else:
+            self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                            preexec_fn=os.setsid)
+
         INFO(1, None, None, "Target started, waiting for return")
 
         if PY3:
             try:
                 self.out, self.err = self.process.communicate(timeout=self.timeout)
-            except subprocess.TimeoutExpired as exc:
+            except subprocess.TimeoutExpired:
                 WARNING(None, "Timeout for %s" % cmd)
+                kill_all(self.process.pid)
         else:
-            self.out, self.err = self.process.communicate() # FYI: do we want to drop python2 support because of this?
-
-        if self.target_ip:
-            original_process = (self.out, self.err, self.process.returncode)
+            self.out, self.err = self.process.communicate()
 
     def run(self, cmd):
-        global original_process
-
-        if self.target_ip:
-            if not original_process: #is it a first run ?
-                self.exec_command(cmd)
-                time.sleep(0.5) #TODO: introduce user-defined sleep
-                self.cmd= self.cmd.split(" ")[1] # TODO: fix it!!!!!!!!!
-                return self.run()
-
-            else: # in this case, cmd contains data
-                manul_network.send_test_case(self.cmd, self.target_ip, self.target_port, self.target_protocol)
-                # TODO: we should establish some wait here until the target finish parsing our test case
-                if isinstance(original_process, tuple):
-                    out, err, returncode = original_process
-                    return returncode, err
-                return 0, ""
 
         self.exec_command(cmd)
 
@@ -118,6 +143,7 @@ class Fuzzer:
         self.dbi = args.dbi
         self.afl_fuzzer = dict()
         self.token_dict = list()
+        self.disable_volatile_bytes = args.disable_volatile_bytes
 
 
         self.user_mutators = dict()
@@ -169,7 +195,7 @@ class Fuzzer:
         self.target_port = None
         self.target_protocol = None
         if args.target_ip_port:
-            self.target_ip = args.target_ip_port.split(':')[0] # todo check if ip:port is correct in main
+            self.target_ip = args.target_ip_port.split(':')[0]
             self.target_port = args.target_ip_port.split(':')[1]
             self.target_protocol = args.target_protocol
 
@@ -280,6 +306,12 @@ class Fuzzer:
 
         self.init_mutators()
 
+        self.net_cmd = False
+        if self.target_ip:
+            self.net_cmd = self.prepare_cmd_to_run(None, True)
+
+        self.command = Command(self.target_ip, self.target_port, self.target_protocol, self.timeout)
+
 
     def sync_bitmap(self):
         self.sync_bitmap_freq += 1
@@ -342,7 +374,7 @@ class Fuzzer:
             self.afl_fuzzer[file_name].save_state(self.output_path)
 
 
-    def prepare_cmd_to_run(self, target_file_path):
+    def prepare_cmd_to_run(self, target_file_path, is_net):
         if self.dbi:
             dbi_tool_opt = "-c"
             if self.dbi == "pin":
@@ -352,7 +384,8 @@ class Fuzzer:
             if self.cmd_fuzzing:
                 target_file_path = extract_content(target_file_path) # now it is the file content
 
-            binary_path = binary_path.replace("@@", target_file_path)
+            if not is_net:
+                binary_path = binary_path.replace("@@", target_file_path)
 
             final_string = "%s %s %s %s -- %s" % (self.dbi_engine_path, dbi_tool_opt, self.dbi_tool_path,
                                                   self.dbi_tool_params, binary_path)
@@ -361,7 +394,8 @@ class Fuzzer:
             if self.cmd_fuzzing:
                 target_file_path = extract_content(target_file_path) # now it is the file content
 
-            final_string = final_string.replace("@@", target_file_path)
+            if not is_net:
+                final_string = final_string.replace("@@", target_file_path)
 
         return final_string
 
@@ -447,7 +481,7 @@ class Fuzzer:
         INFO(0, bcolors.BOLD + bcolors.HEADER, self.log_file, "Performing dry run")
 
         useless = 0
-        command = Command(self.target_ip, self.target_port, self.target_protocol, self.timeout)
+
         for file_name in self.list_of_files:
             # if we have tuple and not string here it means that this file was found during execution and located in queue
             self.current_file_name = file_name
@@ -459,13 +493,15 @@ class Fuzzer:
 
             memset(self.trace_bits, 0x0, SHM_SIZE)
 
-            cmd = self.prepare_cmd_to_run(full_input_file_path)
+            if self.target_ip:
+                err_code, err_output = self.command.net_send_data_to_target(extract_content(full_input_file_path), self.net_cmd)
+            else:
+                cmd = self.prepare_cmd_to_run(full_input_file_path, False)
+                INFO(1, bcolors.BOLD, self.log_file, "Launching %s" % cmd)
+                err_code, err_output = self.command.run(cmd)
 
-            INFO(1, bcolors.BOLD, self.log_file, "Launching %s" % cmd)
-
-            err_code, err_output = command.run(cmd)
             if err_code != 0:
-                INFO(1, None, self.log_file, "Initial input %s triggers exception in the target" % file_name)
+                INFO(1, None, self.log_file, "Initial input file: %s triggers an exception in the target" % file_name)
                 if self.is_critical(err_output, err_code):
                     WARNING(self.log_file, "Initial input %s leads target to crash (did you disable leak sanitizer?). Enable --debug to check actual output" % file_name)
                     INFO(1, None, self.log_file, err_output)
@@ -482,7 +518,7 @@ class Fuzzer:
                     ERROR("You should run 32-bit drrun for 32-bit targets and 64-bit drrun for 64-bit targets")
                 ERROR("%s doesn't cover any path in the target, Make sure the binary is actually instrumented" % file_name)
 
-            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.virgin_bits, False)
+            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.virgin_bits, False, full_input_file_path)
             if ret == 0:
                 useless += 1
                 WARNING(self.log_file, "Test %s might be useless because it doesn't cover new paths in the target, consider removing it" % file_name)
@@ -497,9 +533,11 @@ class Fuzzer:
         self.update_stats()
 
 
-    def has_new_bits(self, trace_bits_as_str, update_virgin_bits, volatile_bytes, bitmap_to_compare, calibration):
+    def has_new_bits(self, trace_bits_as_str, update_virgin_bits, volatile_bytes, bitmap_to_compare, calibration, full_input_file_path):
 
         ret = 0
+
+        #print_bitmaps(bitmap_to_compare, trace_bits_as_str, full_input_file_path)
 
         if not calibration:
             hash_current = zlib.crc32(trace_bits_as_str) & 0xFFFFFFFF
@@ -552,47 +590,49 @@ class Fuzzer:
             else:
                 bitmap_to_compare[i] = ord(trace_bits_as_str[i])
 
-        command = Command(self.target_ip, self.target_port, self.target_protocol, self.timeout)
-
         for i in range(0, self.CALIBRATIONS_COUNT):
             INFO(1, None, self.log_file, "Calibrating %s %d" % (file_name, i))
 
             memset(self.trace_bits, 0x0, SHM_SIZE)
-            if self.target_ip: # in net mode we only need a test case
-                cmd = self.prepare_cmd_to_run(file_name)
+            if self.target_ip: # in net mode we only need a data
+                data = extract_content(self.mutate_file_path + "/" + file_name)
+                err_code, err_output = self.command.net_send_data_to_target(data, self.net_cmd)
             else:
-                cmd = self.prepare_cmd_to_run(self.mutate_file_path + "/" + file_name)
+                cmd = self.prepare_cmd_to_run(self.mutate_file_path + "/" + file_name, False)
 
-            INFO(1, None, self.log_file, cmd)
+                INFO(1, None, self.log_file, cmd)
 
-            if self.cmd_fuzzing:
-                try:
-                    err_code, err_output = command.run(cmd)
-                except TypeError:
-                    WARNING("Failed to send this input over command line into the target")
-                    continue
-            else:
-                err_code, err_output = command.run(cmd)
+                if self.cmd_fuzzing:
+                    try:
+                        err_code, err_output = self.command.run(cmd)
+                    except TypeError:
+                        WARNING("Failed to send this input over command line into the target")
+                        continue
+                else:
+                    err_code, err_output = self.command.run(cmd)
 
             if err_code > 0:
                 INFO(1, None, self.log_file, "Target raised exception during calibration for %s" % file_name)
 
             trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
 
-            for j in range(0, SHM_SIZE):
-                if PY3:
-                    trace_byte = trace_bits_as_str[j]
-                else:
-                    trace_byte = ord(trace_bits_as_str[j])
-                if trace_byte != bitmap_to_compare[j]:
-                    if j not in volatile_bytes:
-                        volatile_bytes.append(j) # mark offset of this byte as volatile
+            if not self.disable_volatile_bytes:
+                for j in range(0, SHM_SIZE):
+                    if PY3:
+                        trace_byte = trace_bits_as_str[j]
+                    else:
+                        trace_byte = ord(trace_bits_as_str[j])
+                    if trace_byte != bitmap_to_compare[j]:
+                        if j not in volatile_bytes:
+                            volatile_bytes.append(j) # mark offset of this byte as volatile
 
-        INFO(1, None, self.log_file, "We have %d volatile bytes for this new finding" % len(volatile_bytes))
+                INFO(1, None, self.log_file, "We have %d volatile bytes for this new finding" % len(volatile_bytes))
+
         # let's try to check for new coverage ignoring volatile bytes
         self.fuzzer_stats.stats['blacklisted_paths'] = len(volatile_bytes)
 
-        return self.has_new_bits(trace_bits_as_str, True, volatile_bytes, self.virgin_bits, True) # result of the last run
+        return self.has_new_bits(trace_bits_as_str, True, volatile_bytes, self.virgin_bits, True,
+                                 self.mutate_file_path + "/" + file_name) # result of the last run
 
     def update_stats(self):
         for i, (k,v) in enumerate(self.fuzzer_stats.stats.items()):
@@ -640,6 +680,7 @@ class Fuzzer:
         return False
 
     def is_critical(self, err_str, err_code):
+
         if "Sanitizer" in err_str or "SIGSEGV" in err_str or "Segmentation fault" in err_str or \
            "core dumped" in err_str or "floating point exception" in err_str:
             return True
@@ -710,14 +751,11 @@ class Fuzzer:
             self.dry_run()
 
         last_stats_saved_time = 0
-        first_iteration = True
 
         if self.restore:
             INFO(0, bcolors.BOLD + bcolors.OKBLUE, self.log_file, "Session sucessfully restored")
 
         start_time = timer()
-
-        command = Command(self.target_ip, self.target_port, self.target_protocol, self.timeout)
 
         while True: # never return
             new_files = list() # empty the list
@@ -747,24 +785,24 @@ class Fuzzer:
                 if res != 0:
                     ERROR("Fuzzer %d failed to generate and save new input on disk" % self.fuzzer_id)
 
-                if self.target_ip and first_iteration == False:
-                    cmd = full_output_file_path
-                    INFO(1, None, self.log_file, "Sending over network content of %s" % cmd)
+                timer_start = timer()
+
+                if self.target_ip:
+                    data = extract_content(full_output_file_path)
+                    exc_code, err_output = self.command.net_send_data_to_target(data, self.net_cmd)
                 else:
-                    cmd = self.prepare_cmd_to_run(full_output_file_path)
+                    cmd = self.prepare_cmd_to_run(full_output_file_path, False)
                     first_iteration = False
                     INFO(1, None, self.log_file, "Running %s" % cmd)
 
-                timer_start = timer()
-
-                if self.cmd_fuzzing:
-                    try:
-                        exc_code, err_output = command.run(cmd)
-                    except TypeError:
-                        WARNING("Failed to give this input from bash into the target")
-                        continue
-                else:
-                    exc_code, err_output = command.run(cmd)
+                    if self.cmd_fuzzing:
+                        try:
+                            exc_code, err_output = self.command.run(cmd)
+                        except TypeError:
+                            WARNING("Failed to give this input from bash into the target")
+                            continue
+                    else:
+                        exc_code, err_output = self.command.run(cmd)
 
                 self.fuzzer_stats.stats['executions'] += 1.0
                 elapsed += (timer() - timer_start)
@@ -783,7 +821,7 @@ class Fuzzer:
 
                         if not self.is_dumb_mode:
                             trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
-                            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.crash_bits, False)
+                            ret = self.has_new_bits(trace_bits_as_str, True, list(), self.crash_bits, False, full_output_file_path)
                             if ret == 2:
                                 INFO(0, bcolors.BOLD + bcolors.OKGREEN, self.log_file, "Crash is unique")
                                 self.fuzzer_stats.stats['unique_crashes'] += 1
@@ -799,7 +837,7 @@ class Fuzzer:
 
                     trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
                     # we are not ready to update coverage at this stage due to volatile bytes
-                    ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits, False)
+                    ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits, False, full_output_file_path)
                     if ret == 2:
                         INFO(1, None, self.log_file, "Input %s produces new coverage, calibrating" % file_name)
                         if self.calibrate_test_case(mutated_name) == 2:
@@ -999,6 +1037,32 @@ def allocate_files_per_jobs(args):
 
     return files
 
+def enable_network_config(args):
+    global net_init_timeout, net_sleep_between_cases
+
+    if (args.target_ip_port and not args.target_protocol) or (args.target_protocol and not args.target_ip_port):
+        ERROR("Both target_ip_port and target_protocol should be specified")
+
+    if args.target_ip_port and not args.target_protocol:
+        ERROR("You need to provide target protocol (tcp or udp) in manul config along with ip and port")
+    if args.target_protocol and not args.target_ip_port:
+        ERROR("You need to provide target port and ip along with TCP/IP protocol in manul config")
+    if args.target_protocol and args.target_protocol != "tcp" and args.target_protocol != "udp":
+        ERROR("Invalid protocol. Should be tcp or udp.")
+    if args.target_ip_port and args.nfuzzers > 1:
+        ERROR("Multi-threaded network fuzzing is not supported, yet")
+    if args.target_ip_port:
+        target_ip_port = args.target_ip_port.split(":")
+        if len(target_ip_port) != 2:
+            ERROR("Invalid format for IP:PORT in manul config, received this: %s" % args.target_ip_port)
+        target_ip = target_ip_port[0]
+        if target_ip.count(".") != 3:
+            ERROR("Invalid IP format in %s" % target_ip)
+        target_port = target_ip_port[1]
+        if int(target_port) > 65535 or int(target_port) <= 0:
+            ERROR("Target port should be in range (0, 65535)")
+        net_init_timeout = float(args.net_init_wait)
+        net_sleep_between_cases = float(args.net_sleep_between_cases)
 
 def parse_args():
     parser = argparse.ArgumentParser(prog = "manul.py",
@@ -1040,12 +1104,15 @@ def parse_args():
     parser.add_argument("--restore", default = None, action = 'store_true', help = argparse.SUPPRESS)
     parser.add_argument("--no_stats", default = None, action = "store_true", help = argparse.SUPPRESS)
     parser.add_argument("--custom_path", default = None, help=argparse.SUPPRESS)
+    parser.add_argument("--net_init_wait", default = 0.0, help = argparse.SUPPRESS)
+    parser.add_argument("--net_sleep_between_cases", default = 0.0, help = argparse.SUPPRESS)
+    parser.add_argument("--disable_volatile_bytes", default = None, action = 'store_true', help = argparse.SUPPRESS)
 
     parser.add_argument('target_binary', nargs='*', help="The target binary and options to be executed.")
 
     args = parser.parse_args()
     additional_args = parse_config(args.config)
-    # A little hack here. We actually adding commands from config to cmd string and parse it all together.
+    # A little hack here. We actually adding commands from config to cmd string and then parse it all together.
     final_cmd_to_parse = "%s %s" % (" ".join(sys.argv[1:-1]), additional_args)
 
     final_cmd_to_parse = final_cmd_to_parse.split(" ")
@@ -1056,7 +1123,7 @@ def parse_args():
     if args.manul_logo:
         printing.print_logo()
 
-    if "@@" not in args.target_binary[0]:
+    if not args.target_ip_port and "@@" not in args.target_binary[0]:
         ERROR("Your forgot to specify @@ for your target. Call manul.py -h for more details")
 
     if args.simple_mode and args.dbi is not None:
@@ -1065,15 +1132,10 @@ def parse_args():
     if not args.mutator_weights:
         ERROR("At least one mutator should be specified")
 
-    if (args.target_ip_port and not args.target_protocol) or (args.target_protocol and not args.target_ip_port):
-        ERROR("Both target_ip_port and target_protocol should be specified")
-    if args.target_protocol and args.target_protocol != "tcp" and args.target_protocol != "udp":
-        ERROR("Invalid protocol. Should be tcp or udp.")
-    if args.target_ip_port and args.nfuzzers > 1:
-        ERROR("Multi-threaded network fuzzing is not supported, yet")
-
     if args.custom_path and not os.path.isdir(args.custom_path):
         ERROR("Custom path provided does not exist or not a directory")
+
+    enable_network_config(args)
 
     if args.dict:
         if not os.path.isfile(args.dict):
@@ -1166,7 +1228,7 @@ if __name__ == "__main__":
         sync_t.setDaemon(True)
         sync_t.start()
 
-    if not PY3:
+    if not PY3 and not args.target_ip_port:
         watchdog_t = threading.Thread(target=watchdog, args=(args.timeout,))
         watchdog_t.setDaemon(True)
         watchdog_t.start()
@@ -1197,6 +1259,6 @@ if __name__ == "__main__":
             time.sleep(STATS_FREQUENCY)
     except (KeyboardInterrupt, SystemExit):
         INFO(0, None, None, "Stopping all fuzzers and threads")
-        kill_all()
+        kill_all(os.getpid())
         INFO(0, None, None, "Stopped, exiting")
         sys.exit()

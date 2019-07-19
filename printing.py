@@ -15,14 +15,14 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-import sys
-import os
 from manul_utils import *
 import time
 import datetime
 from datetime import timedelta
 
 DEBUG_PRINT = False
+MANUL_VERSION = "0.3"
+
 #TODO: colors doesn't work in Windows
 def print_logo():
     print(r"""88EDdWkmWZMEg8QBQQQ#QQQB#QQQ8QDO0OZdIkomZPH0d5ZHyWOgQQgg8g0600$R06dMEZaH3s3zyhoH
@@ -62,6 +62,7 @@ def print_logo():
     qbdbO6ROd$qM$GM0Q06O96RdGesIzkkyzsmmeeehkyVzoIIwzsPHPKMdM5Pd5smey}i}qIr!^!~xk*:>
     emadG9OHdmhO0bR8g9E$DE9dMGWKzwyVyzjzzyVuYii}yjhjzzs5qaPqZMmaMomazu\rYPx=*<:=*oT^""")
 
+
 # TODO: what if length is too loooooong
 def fill_table(first_title, second_title, value, value2, first_table_len, second_table_len):
     first_table = "| %s: %s" % (first_title, value)
@@ -79,6 +80,7 @@ def fill_table(first_title, second_title, value, value2, first_table_len, second
     second_table += second_table_spaces + "|"
 
     return "|  %s   %s |" % (first_table, second_table)
+
 
 def strfdelta(tdelta, fmt):
     d = {"days": tdelta.days}
@@ -100,7 +102,7 @@ def print_per_thread(all_threads_stats, bytes_cov, time_elapsed, active_threads_
     stats = FuzzerStats()
     max_cmd_length = 80
     print("")
-    print(bcolors.HEADER + "                          Manul v 0.2. Fuzzer details" + bcolors.ENDC)
+    print(bcolors.HEADER + "                          Manul %s. Fuzzer details" % MANUL_VERSION + bcolors.ENDC)
     print("Active threads: %d" % active_threads_count)
     mode_def_str = "n/a"
     if args.simple_mode:
@@ -177,6 +179,7 @@ def print_per_thread(all_threads_stats, bytes_cov, time_elapsed, active_threads_
         print("-" * max_cmd_length)
         print("\n")
 
+
 def print_summary(all_threads_stats, bytes_cov, time_elapsed, active_threads_count, args, update, mutators):
     stats_total = FuzzerStats()
     max_cmd_length = 80
@@ -229,7 +232,7 @@ def print_summary(all_threads_stats, bytes_cov, time_elapsed, active_threads_cou
         unique_crashes_str = ("%d" % stats_total.stats['unique_crashes'])
 
     print(bcolors.BOLD)
-    print(bcolors.HEADER + "                          Manul v 0.2. All fuzzers summary                     " + bcolors.ENDC)
+    print(bcolors.HEADER + "                          Manul %s. All fuzzers summary                     " % MANUL_VERSION + bcolors.ENDC)
     active_threads_str = "---------Active threads: %d " % active_threads_count
     cpu_load_str = "CPU: %.2f%%-----" % cpu_load
     line_len = max_cmd_length - len(active_threads_str) - len(cpu_load_str)
@@ -309,7 +312,7 @@ def INFO(lvl, color, log_file, msg):
     else: print("[INFO] %s" % msg)
 
 
-''' Use it if you want to print bitmap and has_new_bits function'''
+''' Use it if you want to print bitmap in the has_new_bits function'''
 def print_bitmaps(bitmap_original, bitmap, output_file_path):
     ret = 0
     fd = open("bitmap_debug", 'a')

@@ -20,10 +20,16 @@
 #ifdef WIN32
 #include <windows.h>
 #else
-#include <sys/types.h> 
-#include <sys/socket.h> 
-#include <arpa/inet.h> 
-#include <netinet/in.h> 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+
 #endif
 #include <string.h>
 #include <stdlib.h>
@@ -31,7 +37,7 @@
 #pragma comment(lib,"ws2_32.lib") //Winsock Library
 #endif
 
-#define DEFAULT_PORT 7714
+#define DEFAULT_PORT 7715
 #define BUFSIZE 4096
 
 /* TODO: test for TCP */
@@ -45,22 +51,19 @@ void error(const char *msg) {
     exit(-1);
 }
 
-
 struct sockaddr_in serveraddr;	  /* server's addr */
 
-void recv_func(int sockfd)
+void recv_func(int new_socket)
 {
-    char *buf;
     struct sockaddr_in clientaddr;	  /* client addr */
     int clientlen = sizeof(clientaddr);
     int n = 0;
 
-    buf = (char *)malloc(BUFSIZE);
+    char *buf = (char *)malloc(BUFSIZE);
 
-    /* receiving over UDP */
-    n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen);
+    n = read(new_socket, buf, BUFSIZE);
     if (n < 0)
-        error("ERROR in recvfrom");
+        error("error in read");
 
     if (buf[0] == 'P') {
         if (buf[1] == 'W') {
@@ -81,7 +84,7 @@ void recv_func(int sockfd)
 
 int main(int argc, char** argv)
 {
-    int sockfd;
+    int sockfd, sock_len;
     int portno = DEFAULT_PORT;
     int optval;
 
@@ -92,12 +95,11 @@ int main(int argc, char** argv)
     iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
 #endif
 
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0)
         error("ERROR opening socket");
 
     optval = 1;
-    /* UDP */
     setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const char *)&optval, sizeof(int));
 
     memset((char *)&serveraddr, 0, sizeof(serveraddr));
@@ -107,7 +109,17 @@ int main(int argc, char** argv)
 
     if (bind(sockfd, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) < 0)
         error("ERROR on binding");
-    while (1)
-        recv_func(sockfd);
+
+    if (listen(sockfd, 3) < 0)
+        error("Failed to start listening on the port");
+
+    sock_len = sizeof(serveraddr);
+
+    while (1) {
+        int new_socket = accept(sockfd, (struct sockaddr *)&serveraddr, &sock_len);
+        if (new_socket < 0)
+            error("Accept failed");
+        recv_func(new_socket);
+    }
     return 0;
 }

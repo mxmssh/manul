@@ -76,7 +76,7 @@ def get_remote_threads_count(ips): # TODO: test it on 3 and more slaves
             INFO(1, None, None, "Sending %s" % message)
             sock.sendall(message)
             data = sock.recv(MAX_RESPONSE_SIZE)  # TODO: wait time ?
-        except (socket.error, exc):
+        except socket.error as exc:
             sock.close()
             ERROR("Request failed, socket return error %s" % exc)
 
@@ -108,7 +108,7 @@ def send_files_list(ip, port, files):
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((ip, int(port)))
-    except (socket.error, exc):
+    except socket.error as exc:
         sock.close()
         ERROR("Failed to connect with slave, socket returned error %s" % exc)
 
@@ -117,7 +117,7 @@ def send_files_list(ip, port, files):
     INFO(1, None, None, "Sending %s" % message)
     try:
         sock.sendall(message)
-    except (socket.error, exc):
+    except socket.error as exc:
         sock.close()
         ERROR("Failed to send files list to slave, socket returned error %s" % exc)
 
@@ -134,7 +134,7 @@ def get_files_list_from_master(ip_port, nthreads):
         sock.bind(server_address)
         sock.listen(1)
         connection, client_address = sock.accept()
-    except (socket.error, exc):
+    except socket.error as exc:
         sock.close()
         ERROR("Failed to connect with master, socket returned error %s" % exc)
 
@@ -143,7 +143,7 @@ def get_files_list_from_master(ip_port, nthreads):
     # Step 1. Master is asking for threads count
     try:
         data = connection.recv(MAX_RESPONSE_SIZE)
-    except (socket.error, exc):
+    except socket.error as exc:
         sock.close()
         ERROR("Failed to read request, socket returned error %d: %s" % exc)
 
@@ -242,7 +242,7 @@ def sync_bitmap_net(virgin_bits, remote_virgin_bits):
 def socket_recv(socket_instance, error_on_empty):
     try:
         rec_data = socket_instance.recv(1500)
-    except (socket.error, exc):
+    except socket.error as exc:
         socket_instance.close()
         ERROR("Failed to recv data from socket. Socket return error %s" % exc)
 
@@ -277,7 +277,7 @@ def send_data(msg, sock, connection):
     package = str(len(data_str)) + " " + data_str
     try:
         connection.send(package)
-    except (socket.error, exc):
+    except socket.error as exc:
         connection.close()
         sock.close()
         ERROR("Failed to send, socket returned error %d: %s" % exc)
@@ -297,7 +297,7 @@ def receive_bitmap_slave(ip_port, virgin_bits):
         INFO(0, None, None, "Waiting for incoming job from master on %s:%d" % (ip, port))
         try:
             connection, client_address = sock.accept()
-        except (socket.error, exc):
+        except socket.error as exc:
             sock.close()
             ERROR("Failed to connect with master, socket returned error %s" % exc)
 
@@ -355,7 +355,7 @@ def sync_remote_bitmaps(virgin_bits, ips):
                 data_str = pickle.dumps(message)
                 res = sock.sendall(data_str)
                 data = recv_data(sock)
-            except (socket.error, exc):
+            except socket.error as exc:
                 sock.close()
                 WARNING(None, "Request to %s failed, socket return error %s" % (ip, exc))
                 continue
@@ -393,26 +393,39 @@ def sync_remote_bitmaps(virgin_bits, ips):
                 INFO(1, None, None, "Sending actual bitmap %d" % len(msg))
                 sock.sendall(msg)
 
-            except (socket.error, exc):
+            except socket.error as exc:
                 WARNING(None, "Request to %s failed, socket return error %s" % (ip, exc))
             sock.close()
 
+class Network(object):
+    def __init__(self, target_ip, target_port, target_protocol):
+        self.target_ip = target_ip
+        self.target_port = target_port
+        self.target_protocol = target_protocol
+        self.s = None
+        # open socket
+        if self.target_protocol == "tcp":
+            self.protocol_l4 = socket.SOCK_STREAM
+        else:
+            self.protocol_l4 = socket.SOCK_DGRAM
 
-def send_test_case(file_path, target_ip, target_port, target_protocol):
-    data = extract_content(file_path)
-    # TODO: send a lot of chunks
-    if len(data) > 65000:
-        data = data[:65000]
-    # open socket
-    if target_protocol == "tcp":
-        protocol_l4 = socket.SOCK_STREAM
-    else:
-        protocol_l4 = socket.SOCK_DGRAM
-    s = socket.socket(socket.AF_INET, protocol_l4)
-    target_port = int(target_port)
-    INFO(1, None, None, "Connecting to %s %d" % (target_ip, target_port))
-    s.connect((target_ip, target_port))
-    INFO(1, None, None, "Sending %d bytes" % len(data))
-    s.sendall(data)
-    INFO(1, None, None, "Done")
-    s.close()
+    def send_test_case(self, data):
+        self.s = socket.socket(socket.AF_INET, self.protocol_l4)
+        INFO(1, None, None, "Connecting to %s on port %d" % (self.target_ip, self.target_port))
+        try:
+            self.s.connect((self.target_ip, self.target_port))
+        except:
+            ERROR("Failed to connect to the host specified %s %d" % self.target_ip, self.target_port)
+        INFO(1, None, None, "Sending %d bytes, content %s" % (len(data), data))
+
+        res = self.s.sendall(data)
+        if res:
+            WARNING(None, "Failed to send data to the server")
+        else:
+            INFO(1, None, None, "Done")
+            # receiving data from the server if any
+            #while 1:
+            #    data = self.s.recv(4096)
+            #    if not data: break
+            #    INFO(1, None, None, "Received %d bytes from the server in response", len(data))
+        self.s.close()
