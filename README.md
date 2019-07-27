@@ -174,19 +174,16 @@ Currently, network fuzzing is an experimental feature (see issues for more detai
 # Adding Custom Mutator 
 Custom mutator can be added in the following three steps:
 Step 1. Create a python (.py) file and give it some name (e.g. example_mutator.py)
+
 Step 2. Create two functions ```def init(fuzzer_id)``` and ```def mutate(data)```. See [example_mutator](example_mutator.py) for more details. Manul will call ```init``` function during fuzzing initalization and ```mutate``` for each file being provided into the target.
+
 Step 3. Enable mutator by specifying its name using ```mutator_weights``` in ```manul.config```. E.g. ```mutator_weights=afl:2,radamsa:0,example_mutator:8```.
 
-NOTE: AFL and Radamsa mutators should always be specified. If you want to disable them just assign 0 weights.
+NOTE: AFL and Radamsa mutators should always be specified. If you want to disable AFL and/or Radamsa just assign 0 weights to them.
 
-# Technical Details
+## Technical Details
+You can find more technical details about Manul in the whitepaper prepared for DEFCON: <TBD link>
 
-### Output Folder
-
-### Clients Compilation
-
-### Tests Compilation
-
-### Status Screen
+## Status Screen
 
 ![Status Screen](misc/status_screen.jpg?raw=true "Status Screen")
