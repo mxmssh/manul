@@ -17,6 +17,7 @@ python3 manul.py -i in -o out -n 4 "linux/test_afl @@"
 
 # Demo
 
+![Short Demo](misc/manul_short_usage.gif)
 
 # Dependencies
 1. psutil
