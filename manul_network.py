@@ -415,7 +415,7 @@ class Network(object):
         try:
             self.s.connect((self.target_ip, self.target_port))
         except:
-            ERROR("Failed to connect to the host specified %s %d" % self.target_ip, self.target_port)
+            ERROR("Failed to connect to the host specified %s %d" % (self.target_ip, self.target_port))
         INFO(1, None, None, "Sending %d bytes, content %s" % (len(data), data))
 
         res = self.s.sendall(data)

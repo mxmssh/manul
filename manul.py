@@ -65,6 +65,7 @@ class Command(object):
 
     def init_target_server(self, cmd):
         global net_process_is_up
+        INFO(1, bcolors.BOLD, None, "Launching %s" % cmd)
         if sys.platform == "win32":
             self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else:
@@ -74,7 +75,6 @@ class Command(object):
             ERROR("Failed to start target server error code = %d, output = %s" % (self.process.returncode, self.process.stdout))
 
         net_process_is_up = True # TODO: in future our handler injected in the target will tell us what's going on
-
         time.sleep(net_init_timeout)
 
     def net_send_data_to_target(self, data, net_cmd):
@@ -136,7 +136,7 @@ class Fuzzer:
     def __init__(self, list_of_files, fuzzer_id, virgin_bits_global, args, stats_array, restore_session, crash_bits,
                  dbi_setup):
         # local fuzzer config
-        global SHM_SIZE
+        global SHM_SIZE, net_init_timeout, net_sleep_between_cases
         self.SHM_SIZE = SHM_SIZE
         self.CALIBRATIONS_COUNT = 7
         self.SHM_ENV_VAR = "__AFL_SHM_ID"
@@ -144,7 +144,8 @@ class Fuzzer:
         self.afl_fuzzer = dict()
         self.token_dict = list()
         self.disable_volatile_bytes = args.disable_volatile_bytes
-
+        net_init_timeout = float(args.net_init_wait)
+        net_sleep_between_cases = float(args.net_sleep_between_cases)
 
         self.user_mutators = dict()
         self.mutator_weights = OrderedDict()
@@ -1038,7 +1039,6 @@ def allocate_files_per_jobs(args):
     return files
 
 def enable_network_config(args):
-    global net_init_timeout, net_sleep_between_cases
 
     if (args.target_ip_port and not args.target_protocol) or (args.target_protocol and not args.target_ip_port):
         ERROR("Both target_ip_port and target_protocol should be specified")
@@ -1061,8 +1061,6 @@ def enable_network_config(args):
         target_port = target_ip_port[1]
         if int(target_port) > 65535 or int(target_port) <= 0:
             ERROR("Target port should be in range (0, 65535)")
-        net_init_timeout = float(args.net_init_wait)
-        net_sleep_between_cases = float(args.net_sleep_between_cases)
 
 def parse_args():
     parser = argparse.ArgumentParser(prog = "manul.py",

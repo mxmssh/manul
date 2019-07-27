@@ -58,7 +58,7 @@ void recv_func(int sockfd)
     buf = (char *)malloc(BUFSIZE);
 
     /* receiving over UDP */
-    n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen);
+    n = read(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&clientaddr, &clientlen);
     if (n < 0)
         error("ERROR in recvfrom");
 
