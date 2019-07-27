@@ -137,10 +137,11 @@ The options ```net_config_master``` and ```net_config_slave``` are used to distr
 1. Create a file with a list of hosts in the following format: ```IP:port``` where your slaves will be executed. 
 2. Start all Manul slave instances on remote machines (with all required options and path to target binary) and enable the following option:
 ```net_config_slave = 0.0.0.0:1337```. Manul will launch the instance and will wait for incoming connection from master instance on port 1337.
-3. Start the master instance and provide the file with list of slave instances created on Step 1 ```net_config_master = file_name```.
+3. Start the master instance and provide the file with a list of slave instances created on Step 1 using ```net_config_master = file_name```.
 
 #### Debug Mode
 ```debug = False|True``` - print debug info.
+
 ```logging_enable = False|True``` - save debug info in the log.
 
 #### Logo
