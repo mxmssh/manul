@@ -1,5 +1,7 @@
-![Logo](misc/manul_logo.jpg?raw=true "ASCII Logo of Manul")
 # Manul
+
+![Logo](misc/manul_logo.jpg?raw=true "ASCII Logo of Manul")
+
 Manul is a coverage-guided parallel fuzzer for open-source and blackbox binaries on Windows, Linux and MacOS (beta) written in pure Python.
 
 # Quick Start
