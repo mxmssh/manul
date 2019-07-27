@@ -68,3 +68,7 @@ Unfortunately, DynamoRIO is not officially supported on OS X. Intel PIN client o
 ## Clients Compilation
 
 ## Tests Compilation
+
+## Status Screen
+
+![Status Screen](misc/status_screen.jpg?raw=true "Status Screen")
