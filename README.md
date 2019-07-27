@@ -168,13 +168,15 @@ The options ```net_config_master``` and ```net_config_slave``` are used to distr
 ```net_init_wait = 1```. This option can be used to wait while the target is launching before actually start sending test cases.
 ```net_sleep_between_cases = 0.0```. This option can be used to define a delay between test cases being send in the target.
 
-TBD: more details about network fuzzing
+Currently, network fuzzing is an experimental feature (see issues for more details).
 
 # Adding Custom Mutator 
-Custom mutator can be added in the following way.
-1. TBD
-2. Enable mutator by specifying its name using ```mutator_weights``` in ```manul.config```. E.g. ```mutator_weights=afl:7,radamsa:2,my_mutator:1```. NOTE: AFL and Radamsa should be always specified. If you want to disable them just assign 0 weights.
+Custom mutator can be added in the following three steps:
+Step 1. Create a python (.py) file and give it some name (e.g. example_mutator.py)
+Step 2. Create two functions ```def init(fuzzer_id)``` and ```def mutate(data)```. See [example_mutator](example_mutator.py) for more details. Manul will call ```init``` function during fuzzing initalization and ```mutate``` for each file being provided into the target.
+Step 3. Enable mutator by specifying its name using ```mutator_weights``` in ```manul.config```. E.g. ```mutator_weights=afl:2,radamsa:0,example_mutator:8```.
 
+NOTE: AFL and Radamsa mutators should always be specified. If you want to disable them just assign 0 weights.
 
 # Technical Details
 
