@@ -110,14 +110,6 @@ Manul is distributed with default manul.config file where user can find all supp
 ### Mutator weights
 ```mutator_weights=afl:7,radamsa:2,my_mutator:1```. Mutators weights allows user to tell manul how many mutations per 10 executions should be performed by certain fuzzer. In this example, AFL mutator will be executed in 7/10 mutations, Radamsa 2/10 and some custom ```my_mutator``` will get 1/10. If you want to disable certain mutator, the weight should be assigned to 0 (e.g. ```mutator_weights=afl:0,radamsa:1,my_mutator:9```).
 
-# Mutator weights (should be 10 in total). Use my_mutator:x,my_mutator_2:x to define and use your own
-# custom mutator (should be 10 in total). Specify 0 to disable certain mutators. Weights basically are
-# used to tell manul how many mutations per 10 executions should be performed by certain fuzzer.
-# example afl:5,radamsa:2,my_awesome_fuzzer:3
-# afl will be used to mutate 5 out of 10 cases, 2 out of 10 for radamsa and 3 out of 10 for my_awesome_fuzzer
-# Your custom mutator's main file should be located in the same folder as manul.py.
-# Two default mutators should always be defined (afl, radamsa)
-
 
 # Network Applications Fuzzing
 
@@ -126,7 +118,7 @@ Manul is distributed with default manul.config file where user can find all supp
 # Adding Custom Mutator 
 Custom mutator can be added in the following way.
 1. TBD
-2. Enable mutator by specifying its name using ```mutator_weights``` in ```manul.config```. E.g. ```mutator_weights=afl:7,radamsa:2,my_mutator:1````
+2. Enable mutator by specifying its name using ```mutator_weights``` in ```manul.config```. E.g. ```mutator_weights=afl:7,radamsa:2,my_mutator:1```. NOTE: AFL and Radamsa should be always specified. If you want to disable them just assign 0 weights.
 
 # Technical Details
 
