@@ -51,7 +51,7 @@ Unfortunately, DynamoRIO is not officially supported on OS X. Intel PIN client o
 
 ### Using DynamoRIO to fuzz blackbox binaries
 
-You can find DynamoRIO release packages under the following link [DynamoRIO download page](https://github.com/DynamoRIO/dynamorio/releases). Choose one of the archive available e.g.:
+You can find DynamoRIO release packages at [DynamoRIO download page](https://github.com/DynamoRIO/dynamorio/releases). Choose one of the archive available such as:
 
 DynamoRIO-i386-Linux-7.91.18103-0.tar.gz - 32bit Linux.
 
