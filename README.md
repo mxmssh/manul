@@ -15,7 +15,7 @@ echo "AAAAAA" > in
 python3 manul.py -i in -o out -n 4 "linux/test_afl @@"
 ```
 
-# List of CVEs
+# List of Public CVEs
 
 | CVE IDs                                      | Product  | Finder         |
 |----------------------------------------------|----------|----------------|
