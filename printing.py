@@ -1,6 +1,6 @@
-#   manul - main module
+#   Manul - printing module
 #   -------------------------------------
-#   Written and maintained by Maksim Shudrak <mshudrak@salesforce.com> <mxmssh@gmail.com>
+#   Maksim Shudrak <mshudrak@salesforce.com> <mxmssh@gmail.com>
 #
 #   Copyright 2019 Salesforce.com, inc. All rights reserved.
 #

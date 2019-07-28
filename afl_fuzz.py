@@ -1,6 +1,6 @@
-#   manul - AFL mutator ported to Python
+#   Manul - AFL mutator ported to Python
 #   -------------------------------------
-#   Written and maintained by Maksim Shudrak <mshudrak@salesforce.com> <mxmssh@gmail.com>
+#   Maksim Shudrak <mshudrak@salesforce.com> <mxmssh@gmail.com>
 #
 #   Copyright 2019 Salesforce.com, inc. All rights reserved.
 #

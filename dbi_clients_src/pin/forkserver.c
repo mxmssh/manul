@@ -1,5 +1,6 @@
 /*
- * forkserver for AFL
+ * forkserver for AFL.
+ * The original source of file https://github.com/vanhauser-thc/afl-pin
  */
 #include <stdio.h>
 #include <stdlib.h>

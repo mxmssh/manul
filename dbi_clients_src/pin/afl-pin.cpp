@@ -1,3 +1,7 @@
+/*
+ The original source of file https://github.com/vanhauser-thc/afl-pin
+*/
+
 #include "pin.H"
 #include <asm/unistd.h>
 #include <sys/types.h>
@@ -39,7 +43,7 @@ static vector<string> libs_to_instrument;
 /* ===================================================================== */
 
 INT32 Usage() {
-  cout << "manul-pin v 0.1 " << endl;
+  cout << "afl-pin v 0.1 " << endl;
   cout << "=====================================================================" << endl;
   cout << " -libs         also instrument basic blocks of certain dynamic libraries" << endl;
   return -1;
