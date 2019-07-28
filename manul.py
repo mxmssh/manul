@@ -1065,7 +1065,7 @@ def enable_network_config(args):
 def parse_args():
     parser = argparse.ArgumentParser(prog = "manul.py",
                                      description = 'Manul - coverage-guided parallel fuzzing for native applications.',
-                                     usage = '%(prog)s -i /home/user/inputs_dir -o /home/user/outputs_dir -n 40 "pdftocairo -png @@"')
+                                     usage = '%(prog)s -i /home/user/inputs_dir -o /home/user/outputs_dir -n 40 "target -png @@"')
     requiredNamed = parser.add_argument_group('Required parameters')
     requiredNamed.add_argument('-i', required=True, dest='input', help = "Path to directory with initial corpus")
     requiredNamed.add_argument('-o', dest='output', required=True, default="manul_output",
@@ -1106,7 +1106,7 @@ def parse_args():
     parser.add_argument("--net_sleep_between_cases", default = 0.0, help = argparse.SUPPRESS)
     parser.add_argument("--disable_volatile_bytes", default = None, action = 'store_true', help = argparse.SUPPRESS)
 
-    parser.add_argument('target_binary', nargs='*', help="The target binary and options to be executed.")
+    parser.add_argument('target_binary', nargs='*', help="The target binary and options to be executed (quotes needed e.g. \"target -png @@\")")
 
     args = parser.parse_args()
     additional_args = parse_config(args.config)
