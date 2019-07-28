@@ -182,7 +182,7 @@ Step 3. Enable mutator by specifying its name using ```mutator_weights``` in ```
 NOTE: AFL and Radamsa mutators should always be specified. If you want to disable AFL and/or Radamsa just assign 0 weights to them.
 
 ## Technical Details
-You can find more technical details about Manul in the whitepaper prepared for DEFCON: <TBD link>
+TBD
 
 ## Status Screen
 
