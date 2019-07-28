@@ -22,7 +22,7 @@ python3 manul.py -i in -o out -n 4 "linux/test_afl @@"
 | CVE-2019-6931 CVE-2019-7310 CVE-2019-9959    | Poppler  | Maksim Shudrak |
 | CVE-2018-17019 CVE-2018-16807 CVE-2019-12175 | Bro/Zeek | Maksim Shudrak |
 
-If you managed to find a new bug using Manul please contact me and I will add you on the list.
+If you managed to find a new bug using Manul please contact me and I will add you in the list.
 
 # Demo
 
