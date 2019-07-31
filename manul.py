@@ -501,7 +501,7 @@ class Fuzzer:
                 INFO(1, bcolors.BOLD, self.log_file, "Launching %s" % cmd)
                 err_code, err_output = self.command.run(cmd)
 
-            if err_code != 0:
+            if err_code and err_code != 0:
                 INFO(1, None, self.log_file, "Initial input file: %s triggers an exception in the target" % file_name)
                 if self.is_critical(err_output, err_code):
                     WARNING(self.log_file, "Initial input %s leads target to crash (did you disable leak sanitizer?). Enable --debug to check actual output" % file_name)
@@ -612,7 +612,7 @@ class Fuzzer:
                 else:
                     err_code, err_output = self.command.run(cmd)
 
-            if err_code > 0:
+            if err_code and err_code > 0:
                 INFO(1, None, self.log_file, "Target raised exception during calibration for %s" % file_name)
 
             trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
