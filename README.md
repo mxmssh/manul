@@ -14,6 +14,16 @@ mkdir out
 echo "AAAAAA" > in
 python3 manul.py -i in -o out -n 4 "linux/test_afl @@"
 ```
+### Installing Radamsa
+
+```
+sudo apt-get install gcc make git wget
+git clone https://gitlab.com/akihe/radamsa.git && cd radamsa && make && sudo make install
+```
+
+There is no need to install radamsa on Windows, Manul is distributed with radamsa native library on this platform.
+
+
 
 # List of Public CVEs
 
