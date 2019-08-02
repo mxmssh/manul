@@ -40,7 +40,7 @@ If you managed to find a new bug using Manul please contact me and I will add yo
 
 # Dependencies
 1. psutil
-2. Python 2.7 or Python 3.5 (prefered)
+2. Python 2.7+ or Python 3.4+ (prefered)
 
 # Coverage-guided fuzzing
 
