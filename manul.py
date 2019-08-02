@@ -118,7 +118,7 @@ class Command(object):
             try:
                 self.out, self.err = self.process.communicate(timeout=self.timeout)
             except subprocess.TimeoutExpired:
-                WARNING(None, "Timeout for %s" % cmd)
+                INFO(1, None, None, "Timeout for %s" % cmd)
                 kill_all(self.process.pid)
         else:
             self.out, self.err = self.process.communicate()
