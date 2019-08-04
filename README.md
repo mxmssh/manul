@@ -36,7 +36,7 @@ If you managed to find a new bug using Manul please contact me and I will add yo
 
 # Demo
 
-![Short Demo](misc/manul_demo_screen.gif)
+![Short Demo](misc/manul_screen_demo.gif)
 
 # Dependencies
 1. psutil
