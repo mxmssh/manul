@@ -11,7 +11,7 @@ git clone https://github.com/mxmssh/manul
 cd manul
 mkdir in
 mkdir out
-echo "AAAAAA" > in
+echo "AAAAAA" > in/test
 python3 manul.py -i in -o out -n 4 "linux/test_afl @@"
 ```
 ### Installing Radamsa
