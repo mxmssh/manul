@@ -29,7 +29,7 @@ There is no need to install radamsa on Windows, Manul is distributed with radams
 
 | CVE IDs                                      | Product  | Finder         |
 |----------------------------------------------|----------|----------------|
-| CVE-2019-6931 CVE-2019-7310 CVE-2019-9959    | Poppler  | Maksim Shudrak |
+| CVE-2019-9631 CVE-2019-7310 CVE-2019-9959    | Poppler  | Maksim Shudrak |
 | CVE-2018-17019 CVE-2018-16807 CVE-2019-12175 | Bro/Zeek | Maksim Shudrak |
 
 If you managed to find a new bug using Manul please contact me and I will add you in the list.
