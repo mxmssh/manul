@@ -70,13 +70,7 @@ Unfortunately, DynamoRIO is not officially supported on OS X. Intel PIN client o
 
 ### Using DynamoRIO to fuzz blackbox binaries
 
-You can find DynamoRIO release packages at [DynamoRIO download page](https://github.com/DynamoRIO/dynamorio/releases). Choose one of the archive available such as:
-
-DynamoRIO-i386-Linux-7.91.18103-0.tar.gz - 32bit Linux.
-
-DynamoRIO-x86_64-Linux-7.91.18103-0.tar.gz - 64bit Linux.
-
-DynamoRIO-Windows-7.91.18103-0.zip - 32/64bit Windows.
+You can find DynamoRIO release packages at [DynamoRIO download page](https://github.com/DynamoRIO/dynamorio/wiki/Downloads). The supported version of DynamoRIO is 7.0.0-RC1 (see the next section if you need the latest version of DynamoRIO).
 
 You have to uncomment the following lines in the ```manul.config``` file and provide correct path to DynamoRIO launcher and client.
 
@@ -89,7 +83,26 @@ dbi_client_root = /home/max/manul/linux/dbi_64/libbinafl.so
 dbi_client_libs = None
 ```
 
-IMPORTANT NOTE: you should use 32bit launcher and 32bit client to fuzz 32bit binaries and 64bit launcher and 64bit client for 64bit binaries!
+IMPORTANT NOTE: You should use 32bit launcher and 32bit client to fuzz 32bit binaries and 64bit launcher and 64bit client for 64bit binaries!
+
+#### Compiling DynamoRIO client library
+
+If you want to use the latest version of [DynamoRIO](https://github.com/DynamoRIO/dynamorio/releases/download/) you need to compile instrumentation library from source code (see example below). The source code of instrumentation library can be found in ```dbi_clients_src``` located in the Manul main folder. On Windows, the compilation command (```cmake```) is the same as on Linux.
+
+```
+64-bit Linux
+
+cd dbi_clients_src
+wget https://github.com/DynamoRIO/dynamorio/releases/download/cronbuild-7.91.18124/DynamoRIO-x86_64-Linux-7.91.18124-0.tar.gz
+tar xvf DynamoRIO-x86_64-Linux-7.91.18124-0.tar.gz
+mkdir client_64
+cd client_64
+cmake ../dr_cov/ -DDynamoRIO_DIR=/home/max/manul/dbi_clients_src/DynamoRIO-x86_64-Linux-7.91.18124-0/cmake
+make
+```
+
+If you need to compile 32-bit library, you should download DynamoRIO-i386-Linux-```*```.tar.gz archive instead of x86_64 and specify ```CFLAGS=-m32 CXXFLAGS=-m32``` before ```cmake``` command.
+
 
 ### Using Intel PIN to fuzz blackbox binaries on Linux
 
