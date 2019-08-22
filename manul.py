@@ -19,6 +19,7 @@ from os import listdir
 from os.path import isfile, join
 import shutil
 from ctypes import *
+from ctypes.wintypes import DWORD, HANDLE, LPCWSTR, LPVOID
 import multiprocessing
 import argparse
 from timeit import default_timer as timer
@@ -400,21 +401,28 @@ class Fuzzer:
 
         return final_string
 
-
     def setup_shm_win(self):
         FILE_MAP_ALL_ACCESS = 0xF001F
         INVALID_HANDLE_VALUE = 0xFFFFFFFF
         PAGE_READWRITE = 0x04
         sh_name = "%s_%s" % (str(int(round(time.time()))), self.fuzzer_id)
-        szName = c_char_p(sh_name.encode("utf-8"))
+        szName = c_wchar_p(sh_name)
 
-        hMapObject = windll.kernel32.CreateFileMappingA(INVALID_HANDLE_VALUE, None,
-                                                        PAGE_READWRITE, 0, self.SHM_SIZE,
-                                                        szName)
+        kernel32_dll = windll.kernel32
+
+        create_file_mapping_func = kernel32_dll.CreateFileMappingW
+        create_file_mapping_func.argtypes = (HANDLE, LPVOID, DWORD, DWORD, DWORD, LPCWSTR)
+        create_file_mapping_func.restype = HANDLE
+        map_view_of_file_func = kernel32_dll.MapViewOfFile
+        map_view_of_file_func.restype = LPVOID
+
+        hMapObject = create_file_mapping_func(INVALID_HANDLE_VALUE, None,
+                                              PAGE_READWRITE, 0, self.SHM_SIZE,
+                                              szName)
         if hMapObject == 0:
             ERROR("Could not open file mapping object")
 
-        pBuf = windll.kernel32.MapViewOfFile(hMapObject, FILE_MAP_ALL_ACCESS, 0, 0,
+        pBuf = map_view_of_file_func(hMapObject, FILE_MAP_ALL_ACCESS, 0, 0,
                                              self.SHM_SIZE)
         if pBuf == 0:
             ERROR("Could not map view of file")
