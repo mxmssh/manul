@@ -1,4 +1,5 @@
-build: false
+build: 
+   -project: false
 
 environment:
   matrix:
@@ -18,6 +19,8 @@ environment:
       PYTHON_VERSION: "3.7.x"
       PYTHON_ARCH: "64"
 
+init:
+  - cmd: pip install psutil
 
 install:
   - cmd: python --version
