@@ -1264,7 +1264,7 @@ if __name__ == "__main__":
 
             if args.stop_after_nseconds != 0.0 and args.stop_after_nseconds < end:
                 INFO(0, None, None, "Stopping manul due to stop_after_nseconds option %d" % end)
-                kill_all(os.getpid())
+                #kill_all(os.getpid())
                 sys.exit(0)
 
             time.sleep(STATS_FREQUENCY)

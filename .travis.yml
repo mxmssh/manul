@@ -18,5 +18,5 @@ script:
   - mkdir in
   - echo AAAAA > in/test
   - mkdir out
-  - python manul.py -i in -o out --stop_after_nseconds 7 "linux/test/test_afl @@"
+  - python manul_test.py
   - ls out/0/crashes/
