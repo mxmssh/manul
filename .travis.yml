@@ -15,4 +15,4 @@ install:
    - pip install psutil
 
 script: 
-  - unit_tests.py
+  - python unit_tests.py
