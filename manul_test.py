@@ -3,16 +3,21 @@ import sys
 import subprocess
 
 print("Starting Manul")
-os.system("python manul.py -i in -o out --stop_after_nseconds 7 \"linux/test/test_afl @@\"")
-print("Checking if files exist")
-path, dirs, files = next(os.walk("./out/0/crashes/"))
-file_count = len(files)
-print("Found %d crashes" % file_count)
-
-if file_count >= 1:
-    print("Success")
+if sys.platform == "win32":
+    python_path = os.getenv("%PYTHONENV")
+    os.system("%s manul.py -i in -o out --stop_after_nseconds 7 -s \"win/test/test64 @@\"" % python_path)
     sys.exit(0)
 else:
-    print("Fail")
-    sys.exit(1)
+    os.system("python manul.py -i in -o out --stop_after_nseconds 7 \"linux/test/test_afl @@\"")
+    print("Checking if files exist")
+    path, dirs, files = next(os.walk("./out/0/crashes/"))
+    file_count = len(files)
+    print("Found %d crashes" % file_count)
+
+    if file_count >= 1:
+        print("Success")
+        sys.exit(0)
+    else:
+        print("Fail")
+        sys.exit(1)
 
