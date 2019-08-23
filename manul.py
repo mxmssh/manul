@@ -416,16 +416,16 @@ class Fuzzer:
         map_view_of_file_func = kernel32_dll.MapViewOfFile
         map_view_of_file_func.restype = LPVOID
 
-        hMapObject = create_file_mapping_func(INVALID_HANDLE_VALUE, None,
+        hMapObject = create_file_mapping_func(-1, None,
                                               PAGE_READWRITE, 0, self.SHM_SIZE,
                                               szName)
-        if hMapObject == 0:
-            ERROR("Could not open file mapping object")
+        if not hMapObject or hMapObject == 0:
+            ERROR("Could not open file mapping object, GetLastError = %d" % GetLastError())
 
         pBuf = map_view_of_file_func(hMapObject, FILE_MAP_ALL_ACCESS, 0, 0,
                                              self.SHM_SIZE)
-        if pBuf == 0:
-            ERROR("Could not map view of file")
+        if not pBuf or pBuf == 0:
+            ERROR("Could not map view of file, GetLastError = %d" % GetLastError())
 
         INFO(0, None, self.log_file, "Setting up shared mem %s for fuzzer:%d" % (sh_name,
              self.fuzzer_id))
