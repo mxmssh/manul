@@ -19,7 +19,6 @@ from os import listdir
 from os.path import isfile, join
 import shutil
 from ctypes import *
-from ctypes.wintypes import DWORD, HANDLE, LPCWSTR, LPVOID
 import multiprocessing
 import argparse
 from timeit import default_timer as timer
@@ -402,6 +401,7 @@ class Fuzzer:
         return final_string
 
     def setup_shm_win(self):
+        from ctypes.wintypes import DWORD, HANDLE, LPCWSTR, LPVOID
         FILE_MAP_ALL_ACCESS = 0xF001F
         INVALID_HANDLE_VALUE = 0xFFFFFFFF
         PAGE_READWRITE = 0x04
