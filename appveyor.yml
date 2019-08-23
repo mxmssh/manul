@@ -11,4 +11,4 @@ install:
 - "%PYTHON%/Scripts/pip.exe install psutil"
 
 test_script:
-- "%PYTHON%/python.exe unit_tests.py
+- "%PYTHON%/python.exe unit_tests.py"
