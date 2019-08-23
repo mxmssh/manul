@@ -2,13 +2,16 @@
 ---
 environment:
   matrix:
-  - TOXENV: py27
-  - TOXENV: py37
+  - MANULENV: py27
+  - MANULENV: py37
 
 build: off
 
+init:
+- "ECHO %PYTHON% %PYTHON_VERSION% %PYTHON_ARCH%"
+
 install:
-- pip install psutil
+- python pip install psutil
 
 test_script:
-- unit_tests.py
+- python unit_tests.py
