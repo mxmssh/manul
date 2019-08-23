@@ -13,3 +13,7 @@ install:
 test_script:
   - "%PYTHONENV%/python.exe --version"
   - "%PYTHONENV%/python.exe unit_tests.py"
+  - "mkdir in"
+  - "echo AAAAA > in/test"
+  - "mkdir out"
+  - "%PYTHONENV%/python.exe manul_test.py"
