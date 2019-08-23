@@ -403,7 +403,6 @@ class Fuzzer:
     def setup_shm_win(self):
         from ctypes.wintypes import DWORD, HANDLE, LPCWSTR, LPVOID
         FILE_MAP_ALL_ACCESS = 0xF001F
-        INVALID_HANDLE_VALUE = 0xFFFFFFFF
         PAGE_READWRITE = 0x04
         sh_name = "%s_%s" % (str(int(round(time.time()))), self.fuzzer_id)
         szName = c_wchar_p(sh_name)

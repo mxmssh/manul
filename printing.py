@@ -16,6 +16,7 @@
 #   limitations under the License.
 
 from manul_utils import *
+import psutil
 import time
 import datetime
 from datetime import timedelta
@@ -186,7 +187,7 @@ def print_summary(all_threads_stats, bytes_cov, time_elapsed, active_threads_cou
     first_table_max_len = 42
     second_table_max_len = 30
 
-    cpu_load = 0.00 # TODO: I don't want external libraries, find way to get cpu load using standard queries
+    cpu_load = psutil.cpu_percent()
 
     bitmap_cov = bytes_cov / float(SHM_SIZE) * 100
     for thread_stat in all_threads_stats:
