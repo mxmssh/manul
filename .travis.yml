@@ -13,5 +13,10 @@ python:
 install:
    - pip install psutil
 
-script: 
+script:
   - python unit_tests.py
+  - mkdir in
+  - echo AAAAA > in/test
+  - mkdir out
+  - timeout 7s python manul.py -i in -o out "linux/test/test_afl @@"
+  - ls out/0/crashes/
