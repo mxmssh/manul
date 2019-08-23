@@ -1,4 +1,5 @@
 # Manul
+![Travis](https://travis-ci.org/mxmssh/manul.svg?branch=master)
 
 ![Logo](misc/manul_logo.jpg?raw=true "ASCII Logo of Manul")
 
