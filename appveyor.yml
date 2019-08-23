@@ -2,13 +2,15 @@
 ---
 environment:
   matrix:
-  - MANULENV: py27
-  - MANULENV: py37
+    - PYTHONENV: "C:\\Python27"
+    - PYTHONENV: "C:\\Python37"
 
-build: off
+init:
+  - "ECHO %PYTHON%"
 
 install:
-- "%PYTHON%/Scripts/pip.exe install psutil"
+  - "%PYTHONENV%/Scripts/pip.exe install nose"
+  - "%PYTHONENV%/Scripts/pip.exe install coverage"
 
 test_script:
-- "%PYTHON%/python.exe unit_tests.py"
+  - "%PYTHONENV%/Scripts/nosetests"
