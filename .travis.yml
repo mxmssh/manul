@@ -4,12 +4,11 @@ language:
 # Disable sudo to speed up the build
 sudo: false
 
-os: linux 
+os: linux
 
-dist: trusty
-
-# Set the python version to 2.7
-python: 2.7
+python: 
+   - 2.7
+   - 3.7
 
 install:
    - pip install psutil
