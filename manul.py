@@ -1112,6 +1112,7 @@ def parse_args():
     parser.add_argument("--net_init_wait", default = 0.0, help = argparse.SUPPRESS)
     parser.add_argument("--net_sleep_between_cases", default = 0.0, help = argparse.SUPPRESS)
     parser.add_argument("--disable_volatile_bytes", default = None, action = 'store_true', help = argparse.SUPPRESS)
+    parser.add_argument("--stop_after_nseconds", default = 0.0, type=int, help = argparse.SUPPRESS)
 
     parser.add_argument('target_binary', nargs='*', help="The target binary and options to be executed (quotes needed e.g. \"target -png @@\")")
 
@@ -1260,6 +1261,11 @@ if __name__ == "__main__":
                 printing.print_per_thread(all_threads_stats, bytes_cov, end, active_threads_count, args, args.mutator_weights)
             else:
                 printing.print_summary(all_threads_stats, bytes_cov, end, active_threads_count, args, UPDATE, args.mutator_weights)
+
+            if args.stop_after_nseconds != 0.0 and args.stop_after_nseconds < end:
+                INFO(0, None, None, "Stopping manul due to stop_after_nseconds option %d" % end)
+                kill_all(os.getpid())
+                sys.exit(0)
 
             time.sleep(STATS_FREQUENCY)
     except (KeyboardInterrupt, SystemExit):
