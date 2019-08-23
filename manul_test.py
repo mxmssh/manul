@@ -4,7 +4,7 @@ import subprocess
 
 print("Starting Manul")
 if sys.platform == "win32":
-    python_path = os.getenv("%PYTHONENV")
+    python_path = os.getenv("PYTHONENV")
     os.system("%s manul.py -i in -o out --stop_after_nseconds 7 -s \"win/test/test64 @@\"" % python_path)
     sys.exit(0)
 else:
