@@ -1,0 +1,18 @@
+language:
+  - python
+
+# Disable sudo to speed up the build
+sudo: false
+
+os: linux 
+
+dist: trusty
+
+# Set the python version to 2.7
+python: 2.7
+
+install:
+   - pip install psutil
+
+script: 
+  - unit_tests.py
