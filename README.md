@@ -1,5 +1,6 @@
 # Manul
 ![Travis](https://travis-ci.org/mxmssh/manul.svg?branch=master)
+![AppVeyor](https://ci.appveyor.com/api/projects/status/yj94vopjdrq7kdhe?svg=true)
 
 ![Logo](misc/manul_logo.jpg?raw=true "ASCII Logo of Manul")
 
