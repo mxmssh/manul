@@ -1,0 +1,14 @@
+# appveyor.yml
+---
+environment:
+  matrix:
+  - TOXENV: py27
+  - TOXENV: py37
+
+build: off
+
+install:
+- pip install psutil
+
+test_script:
+- unit_tests.py
