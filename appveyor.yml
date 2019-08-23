@@ -5,12 +5,10 @@ environment:
     - PYTHONENV: "C:\\Python27"
     - PYTHONENV: "C:\\Python37"
 
-init:
-  - "ECHO %PYTHON%"
+build: off
 
 install:
-  - "%PYTHONENV%/Scripts/pip.exe install nose"
-  - "%PYTHONENV%/Scripts/pip.exe install coverage"
+  - "%PYTHONENV%/Scripts/pip.exe install psutil"
 
 test_script:
   - "%PYTHONENV%/Scripts/nosetests"
