@@ -12,4 +12,4 @@ install:
 
 test_script:
   - "%PYTHONENV%/python.exe --version"
-  - "unit_tests.py"
+  - "%PYTHONENV%/python.exe unit_tests.py"
