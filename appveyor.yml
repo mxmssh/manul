@@ -11,4 +11,5 @@ install:
   - "%PYTHONENV%/Scripts/pip.exe install psutil"
 
 test_script:
-  - "%PYTHONENV%/Scripts/nosetests"
+  - "%PYTHONENV%/python.exe --version"
+  - "unit_tests.py"
