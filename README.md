@@ -42,17 +42,22 @@ If you managed to find a new bug using Manul please contact me and I will add yo
 
 # Dependencies
 1. [psutil](https://pypi.org/project/psutil/)
-2. Python 2.7+ or Python 3.4+ (prefered)
+2. Python 2.7+ or Python 3.7+ (prefered)
 
 # Coverage-guided fuzzing
 
-Currently, Manul supports two types of instrumentation: afl-gcc and DBI.
+Currently, Manul supports two types of instrumentation: AFL-based (afl-gcc, afl-clang and [afl-clang-fast](https://github.com/mirrorer/afl/tree/master/llvm_mode)) and DBI.
 
 ## Coverage-guided fuzzing (AFL instrumentation mode)
 
-Instrument your target with ```afl-gcc``` and ```Address Sanitizier``` (recommended for better results). For example:
+Instrument your target with ```afl-gcc``` or ```afl-clang-fast``` and ```Address Sanitizier``` (recommended for better results). For example:
 ```
 CC=afl-gcc CXX=afl-g++ CFLAGS=-fsanitize=address CXXFLAGS=-fsanitize=address cmake <path_to_your_target>
+make -j 8
+```
+
+```
+USE_ASAN=1 CC=afl-clang-fast CXX=afl-clang-fast++ cmake <path_to_your_target>
 make -j 8
 ```
 
