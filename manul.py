@@ -44,16 +44,78 @@ else:
 import subprocess, threading
 import signal
 
-#TODO: communication with process + error codes might be better to implement using AFL's instrumentation code
-# and shared memory. We also need AFL's forkserver
-
 net_process_is_up = None
-net_init_timeout = 0
 net_sleep_between_cases = 0
 
+INIT_WAIT_TIME = 0
+
+class ForkServer(object):
+    def __init__(self, timeout):
+        self.control = os.pipe()
+        self.status = os.pipe()
+        self.r_fd = None
+        self.timeout = timeout
+
+
+    def init_forkserver(self, cmd):
+        processid = os.fork()
+        if processid:
+            # This is the parent process
+            time.sleep(INIT_WAIT_TIME)
+            self.r_fd = os.fdopen(self.status[0], 'rb')
+            res = self.r_fd.read(4)
+            if len(res) != 4:
+                ERROR("Failed to init forkserver")
+
+            INFO(0, bcolors.OKGREEN, None, "Forkserver init completed sucessfully")
+        else:
+            # This is the child process
+
+            os.dup2(self.control[0], 198)
+            os.dup2(self.status[1], 199)
+
+            null_fds = [os.open(os.devnull, os.O_RDWR) for x in xrange(2)]
+            # put /dev/null fds on 1 and 2
+            os.dup2(null_fds[0], 1)
+            os.dup2(null_fds[1], 2)
+
+            cmd = cmd.split()
+
+            # TODO: we need to close some fds before we actually start execv
+            # more details: https://lcamtuf.blogspot.com/2014/10/fuzzing-binaries-without-execve.html
+            os.execv(cmd[0], cmd[0:])
+            ERROR("Failed to start the target using forkserver")
+            sys.exit(0) # this shouldn't be happen
+
+
+    def run_via_forkserver(self):
+        # TODO: timeouts for read/write otherwise we can wait infinitely
+
+        res = os.write(self.control[1], b"go_!") # ask forkserver to fork
+        if res != 4:
+            ERROR("Failed to communicate with forkserver (run_via_forkserver, write). Unable to send go command")
+
+        fork_pid = self.r_fd.read(4)
+        if len(fork_pid) != 4:
+            ERROR("Failed to communicate with forkserver (run_via_forkserver, read). Unable to confirm fork")
+
+        status = self.r_fd.read(4) # TODO: we need timeout here because our target can go idle
+        if len(status) != 4:
+            ERROR("Failed to communicate with forkserver (run_via_forkserver, read). Unable to retrieve child status")
+
+        return bytes_to_int(status)
+
+
 class Command(object):
-    def __init__(self, target_ip, target_port, target_protocol, timeout):
+    def __init__(self, target_ip, target_port, target_protocol, timeout, fokserver_on):
         self.process = None
+        self.forkserver_on = fokserver_on
+        self.forkserver_is_up = False
+        self.forkserver = None
+        self.returncode = 0
+        if self.forkserver_on:
+            self.forkserver = ForkServer(timeout)
+
         self.out = None
         self.err = None
         self.timeout = timeout
@@ -62,6 +124,7 @@ class Command(object):
             self.target_port = int(target_port)
             self.target_protocol = target_protocol
         self.net_class = None
+
 
     def init_target_server(self, cmd):
         global net_process_is_up
@@ -74,8 +137,9 @@ class Command(object):
         if not is_alive(self.process.pid):
             ERROR("Failed to start target server error code = %d, output = %s" % (self.process.returncode, self.process.stdout))
 
-        net_process_is_up = True # TODO: in future our handler injected in the target will tell us what's going on
-        time.sleep(net_init_timeout)
+        net_process_is_up = True
+        time.sleep(INIT_WAIT_TIME)
+
 
     def net_send_data_to_target(self, data, net_cmd):
         global net_process_is_up
@@ -105,7 +169,23 @@ class Command(object):
 
         return 0, ""
 
+
+    def exec_command_forkserver(self, cmd):
+        if not self.forkserver_is_up:
+            self.forkserver.init_forkserver(cmd)
+            self.forkserver_is_up = True
+        status = self.forkserver.run_via_forkserver()
+
+        return status
+
+
     def exec_command(self, cmd):
+        if self.forkserver_on:
+            status = self.exec_command_forkserver(cmd)
+            self.returncode = status
+            self.err = ""
+            return
+
         if sys.platform == "win32":
             self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         else:
@@ -121,7 +201,7 @@ class Command(object):
                 INFO(1, None, None, "Timeout for %s" % cmd)
                 kill_all(self.process.pid)
         else:
-            self.out, self.err = self.process.communicate()
+            self.out, self.err = self.process.communicate() # watchdog will handle timeout if needed
 
     def run(self, cmd):
 
@@ -129,6 +209,9 @@ class Command(object):
 
         if isinstance(self.err, (bytes, bytearray)):
             self.err = self.err.decode("utf-8", 'replace')
+
+        if self.forkserver_on:
+            return self.returncode, self.err
         return self.process.returncode, self.err
 
 
@@ -136,7 +219,7 @@ class Fuzzer:
     def __init__(self, list_of_files, fuzzer_id, virgin_bits_global, args, stats_array, restore_session, crash_bits,
                  dbi_setup):
         # local fuzzer config
-        global SHM_SIZE, net_init_timeout, net_sleep_between_cases
+        global SHM_SIZE, net_sleep_between_cases
         self.SHM_SIZE = SHM_SIZE
         self.CALIBRATIONS_COUNT = 7
         self.SHM_ENV_VAR = "__AFL_SHM_ID"
@@ -144,7 +227,6 @@ class Fuzzer:
         self.afl_fuzzer = dict()
         self.token_dict = list()
         self.disable_volatile_bytes = args.disable_volatile_bytes
-        net_init_timeout = float(args.net_init_wait)
         net_sleep_between_cases = float(args.net_sleep_between_cases)
 
         self.user_mutators = dict()
@@ -311,7 +393,8 @@ class Fuzzer:
         if self.target_ip:
             self.net_cmd = self.prepare_cmd_to_run(None, True)
 
-        self.command = Command(self.target_ip, self.target_port, self.target_protocol, self.timeout)
+        self.forkserver_on = args.forkserver_on
+        self.command = Command(self.target_ip, self.target_port, self.target_protocol, self.timeout, args.forkserver_on)
 
 
     def sync_bitmap(self):
@@ -399,6 +482,7 @@ class Fuzzer:
                 final_string = final_string.replace("@@", target_file_path)
 
         return final_string
+
 
     def setup_shm_win(self):
         from ctypes.wintypes import DWORD, HANDLE, LPCWSTR, LPVOID
@@ -499,6 +583,9 @@ class Fuzzer:
             else:
                 full_input_file_path = self.input_path + "/" + file_name
 
+            shutil.copy(full_input_file_path, self.mutate_file_path + "/.cur_input")
+            full_input_file_path = self.mutate_file_path + "/.cur_input"
+
             memset(self.trace_bits, 0x0, SHM_SIZE)
 
             if self.target_ip:
@@ -511,7 +598,8 @@ class Fuzzer:
             if err_code and err_code != 0:
                 INFO(1, None, self.log_file, "Initial input file: %s triggers an exception in the target" % file_name)
                 if self.is_critical(err_output, err_code):
-                    WARNING(self.log_file, "Initial input %s leads target to crash (did you disable leak sanitizer?). Enable --debug to check actual output" % file_name)
+                    WARNING(self.log_file, "Initial input %s leads target to crash (did you disable leak sanitizer?). "
+                                           "Enable --debug to check actual output" % file_name)
                     INFO(1, None, self.log_file, err_output)
                 elif self.is_problem_with_config(err_code, err_output):
                     WARNING(self.log_file, "Problematic file %s" % file_name)
@@ -587,7 +675,7 @@ class Fuzzer:
 
         return ret
 
-    def calibrate_test_case(self, file_name):
+    def calibrate_test_case(self, full_file_path):
         volatile_bytes = list()
         trace_bits_as_str = string_at(self.trace_bits, self.SHM_SIZE) # this is how we read memory in Python
 
@@ -598,16 +686,19 @@ class Fuzzer:
             else:
                 bitmap_to_compare[i] = ord(trace_bits_as_str[i])
 
+        cmd, data = None, None
+        if self.target_ip: # in net mode we only need data
+            data = extract_content(full_file_path)
+        else:
+            cmd = self.prepare_cmd_to_run(full_file_path, False)
+
         for i in range(0, self.CALIBRATIONS_COUNT):
-            INFO(1, None, self.log_file, "Calibrating %s %d" % (file_name, i))
+            INFO(1, None, self.log_file, "Calibrating %s %d" % (full_file_path, i))
 
             memset(self.trace_bits, 0x0, SHM_SIZE)
-            if self.target_ip: # in net mode we only need a data
-                data = extract_content(self.mutate_file_path + "/" + file_name)
+            if self.target_ip: # in net mode we only need data
                 err_code, err_output = self.command.net_send_data_to_target(data, self.net_cmd)
             else:
-                cmd = self.prepare_cmd_to_run(self.mutate_file_path + "/" + file_name, False)
-
                 INFO(1, None, self.log_file, cmd)
 
                 if self.cmd_fuzzing:
@@ -620,7 +711,7 @@ class Fuzzer:
                     err_code, err_output = self.command.run(cmd)
 
             if err_code and err_code > 0:
-                INFO(1, None, self.log_file, "Target raised exception during calibration for %s" % file_name)
+                INFO(1, None, self.log_file, "Target raised exception during calibration for %s" % full_file_path)
 
             trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
 
@@ -639,8 +730,7 @@ class Fuzzer:
         # let's try to check for new coverage ignoring volatile bytes
         self.fuzzer_stats.stats['blacklisted_paths'] = len(volatile_bytes)
 
-        return self.has_new_bits(trace_bits_as_str, True, volatile_bytes, self.virgin_bits, True,
-                                 self.mutate_file_path + "/" + file_name) # result of the last run
+        return self.has_new_bits(trace_bits_as_str, True, volatile_bytes, self.virgin_bits, True, full_file_path)
 
     def update_stats(self):
         for i, (k,v) in enumerate(self.fuzzer_stats.stats.items()):
@@ -684,12 +774,14 @@ class Fuzzer:
     def is_critifcal_linux(self, exception_code):
         if exception_code in critical_signals_nix:
             return True
+        if self.forkserver_on and os.WIFSIGNALED(exception_code):
+            return True
 
         return False
 
     def is_critical(self, err_str, err_code):
 
-        if "Sanitizer" in err_str or "SIGSEGV" in err_str or "Segmentation fault" in err_str or \
+        if err_str and "Sanitizer" in err_str or "SIGSEGV" in err_str or "Segmentation fault" in err_str or \
            "core dumped" in err_str or "floating point exception" in err_str:
             return True
 
@@ -784,7 +876,7 @@ class Fuzzer:
                 if not self.is_dumb_mode:
                     memset(self.trace_bits, 0x0, SHM_SIZE) # preparing our bitmap for new run
 
-                mutated_name = file_name + "_mutated"
+                mutated_name = ".cur_input"
                 full_output_file_path = self.mutate_file_path + "/" + mutated_name
 
                 # command to generate new input using one of selected mutators
@@ -848,7 +940,7 @@ class Fuzzer:
                     ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits, False, full_output_file_path)
                     if ret == 2:
                         INFO(1, None, self.log_file, "Input %s produces new coverage, calibrating" % file_name)
-                        if self.calibrate_test_case(mutated_name) == 2:
+                        if self.calibrate_test_case(full_output_file_path) == 2:
                             self.fuzzer_stats.stats['new_paths'] += 1
                             self.fuzzer_stats.stats['last_path_time'] = time.time()
                             INFO(1, None, self.log_file, "Calibration finished sucessfully. Saving new finding")
@@ -1070,6 +1162,7 @@ def enable_network_config(args):
             ERROR("Target port should be in range (0, 65535)")
 
 def parse_args():
+    global INIT_WAIT_TIME
     parser = argparse.ArgumentParser(prog = "manul.py",
                                      description = 'Manul - coverage-guided parallel fuzzing for native applications.',
                                      usage = '%(prog)s -i /home/user/inputs_dir -o /home/user/outputs_dir -n 40 "target -png @@"')
@@ -1109,10 +1202,11 @@ def parse_args():
     parser.add_argument("--restore", default = None, action = 'store_true', help = argparse.SUPPRESS)
     parser.add_argument("--no_stats", default = None, action = "store_true", help = argparse.SUPPRESS)
     parser.add_argument("--custom_path", default = None, help=argparse.SUPPRESS)
-    parser.add_argument("--net_init_wait", default = 0.0, help = argparse.SUPPRESS)
+    parser.add_argument("--init_wait", default = 0.0, help = argparse.SUPPRESS)
     parser.add_argument("--net_sleep_between_cases", default = 0.0, help = argparse.SUPPRESS)
     parser.add_argument("--disable_volatile_bytes", default = None, action = 'store_true', help = argparse.SUPPRESS)
     parser.add_argument("--stop_after_nseconds", default = 0.0, type=int, help = argparse.SUPPRESS)
+    parser.add_argument("--forkserver_on", default = False, action = 'store_true', help = argparse.SUPPRESS)
 
     parser.add_argument('target_binary', nargs='*', help="The target binary and options to be executed (quotes needed e.g. \"target -png @@\")")
 
@@ -1146,6 +1240,12 @@ def parse_args():
     if args.dict:
         if not os.path.isfile(args.dict):
             WARNING(None, "Unable to read dictionary file from %s, file doesn't exist" % args.dict)
+
+    if args.forkserver_on and not sys.platform.startswith('linux'):
+        INFO(0, None, None, "Forkserver is not supported on this platform, switching to classic mode")
+        args.forkserver_on = False
+
+    INIT_WAIT_TIME = float(args.init_wait)
 
     return args
 
@@ -1234,7 +1334,7 @@ if __name__ == "__main__":
         sync_t.setDaemon(True)
         sync_t.start()
 
-    if not PY3 and not args.target_ip_port:
+    if not PY3 and not args.target_ip_port and not args.forkserver_on:
         watchdog_t = threading.Thread(target=watchdog, args=(args.timeout,))
         watchdog_t.setDaemon(True)
         watchdog_t.start()

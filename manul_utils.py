@@ -24,6 +24,7 @@ import signal
 import sys
 from helper import *
 import zlib
+import struct
 
 '''
 manul usefull functions
@@ -83,6 +84,11 @@ else:
         BOLD = '\033[1m'
         UNDERLINE = '\033[4m'
 
+def bytes_to_int(byte_str):
+    if PY3:
+        return int.from_bytes(byte_str, "little")
+    else:
+        return struct.unpack("<L", byte_str)[0]
 
 def parse_config(file_path):
     content = open(file_path, 'r').readlines()
