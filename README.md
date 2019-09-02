@@ -42,7 +42,7 @@ If you managed to find a new bug using Manul please contact me and I will add yo
 
 # Dependencies
 1. [psutil](https://pypi.org/project/psutil/)
-2. Python 2.7+ or Python 3.7+ (prefered)
+2. Python 2.7+ (will be deprecated after 1 Jan. 2020) or Python 3.7+ (prefered)
 
 # Coverage-guided fuzzing
 
