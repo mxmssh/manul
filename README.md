@@ -158,6 +158,10 @@ Manul is distributed with default ```manul.config``` file where user can find al
 #### Disable Volatile Paths
 ```disable_volatile_bytes = False|True``` By enabling this option, Manul will not blacklist volatile paths.
 
+#### AFL's forkserver (only UNIX)
+
+```forkserver_on = False|True``` Enable or disable AFL's [forkserver](https://lcamtuf.blogspot.com/2014/10/fuzzing-binaries-without-execve.html).
+
 #### DBI Options
 ```dbi = dynamorio|pin```. This option tells Manul which DBI framework will be used to instrument the target.
 
@@ -169,6 +173,9 @@ Manul is distributed with default ```manul.config``` file where user can find al
 
 #### Timeout
 ```timeout = 10```. Time to wait before kill the target and send the next test case.
+
+#### init_wait
+```init_wait = 1```. This option can be used to setup a timeout required for target to initialize.
 
 #### Netslave and Netmaster Options
 
@@ -205,7 +212,6 @@ The options ```net_config_master``` and ```net_config_slave``` are used to distr
 
 ```target_ip_port = 127.0.0.1:7715|None``` - used to spefiy target IP and PORT.
 ```target_protocol = tcp|tcp``` - used to spefify the protocol to send input in the target over network.
-```net_init_wait = 1```. This option can be used to wait while the target is launching before actually start sending test cases.
 ```net_sleep_between_cases = 0.0```. This option can be used to define a delay between test cases being send in the target.
 
 Currently, network fuzzing is an experimental feature (see issues for more details).
