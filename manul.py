@@ -56,7 +56,6 @@ class ForkServer(object):
         self.r_fd = None
         self.timeout = timeout
 
-
     def init_forkserver(self, cmd):
         processid = os.fork()
         if processid:
@@ -66,9 +65,9 @@ class ForkServer(object):
             res = self.r_fd.read(4)
             if len(res) != 4:
                 ERROR("Failed to init forkserver")
-
             INFO(0, bcolors.OKGREEN, None, "Forkserver init completed sucessfully")
         else:
+
             # This is the child process
 
             os.dup2(self.control[0], 198)
@@ -1244,6 +1243,8 @@ def parse_args():
     if args.forkserver_on and not sys.platform.startswith('linux'):
         INFO(0, None, None, "Forkserver is not supported on this platform, switching to classic mode")
         args.forkserver_on = False
+    if args.simple_mode:
+        args.forkserver_on = False # we don't have forkserver in simple mode
 
     INIT_WAIT_TIME = float(args.init_wait)
 
