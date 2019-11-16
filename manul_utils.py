@@ -27,7 +27,7 @@ import zlib
 import struct
 
 '''
-manul usefull functions
+manul useful functions
 '''
 STATS_FREQUENCY = 1
 SHM_SIZE = 65535
@@ -96,13 +96,13 @@ def parse_config(file_path):
     args_dict = dict()
     for i, line in enumerate(content):
         line = line.replace("\n", "")
-        if line.startswith("#") or len(line) <= 1: # comments or empty lines
+        if line.startswith("#") or len(line) <= 1:  # comments or empty lines
             continue
         line = line.replace(" ", "")
         if line.count("=") != 1:
             printing.ERROR("Wrong config format at line %d:%s, exiting" % (i, line))
 
-        line = line.split("=") # [arg_name, value]
+        line = line.split("=")  # [arg_name, value]
         # parse Bool|Number|String
         value = line[1]
         if value == 'True':
@@ -121,9 +121,9 @@ def get_list_of_idle_processes(timeout):
     parent = psutil.Process(pid)
     children = parent.children(recursive=True)
     for p in children:
-        #enumerating targets without name python in them
+        # enumerating targets without name python in them
         child = psutil.Process(p.pid)
-        if "python" in child.name() or "Python" in child.name() or "sh" == child.name(): # FYI: if target has python name we can't stop it
+        if "python" in child.name() or "Python" in child.name() or "sh" == child.name():  # FYI: if target has python name we can't stop it
             continue
         created_at = child.create_time()
         elapsed = time.time() - created_at
@@ -136,7 +136,7 @@ def is_alive(pid):
         # alive but zombie ?
         proc = psutil.Process(pid)
         if proc.status() == psutil.STATUS_ZOMBIE:
-            kill_all(pid) # avoid Zombies in our environment
+            kill_all(pid)  # avoid Zombies in our environment
             return False
         return True
     else:
@@ -158,7 +158,7 @@ def kill_all(pid):
         kill_process(p)
     kill_process(parent)
 
-def watchdog(timeout): # used only in python2
+def watchdog(timeout):  # used only in python2
     '''
     Watchdog runs infinitely and kills all idle processes
     :param timeout:
@@ -169,7 +169,7 @@ def watchdog(timeout): # used only in python2
     if sys.platform == "win32":
         sig = signal.CTRL_BREAK_EVENT
     else:
-        sig = signal.SIGTERM # FYI: sometimes it might be handled by the target. sigkill can cause FP?
+        sig = signal.SIGTERM  # FYI: sometimes it might be handled by the target. sigkill can cause FP?
 
     while True:
         # getting list of running targets
@@ -181,7 +181,7 @@ def watchdog(timeout): # used only in python2
                 printing.INFO(0, None, None, "Sending SIGKILL signal to %d %s" % (target_id, pid.name()))
                 p.send_signal(sig)
         except psutil.NoSuchProcess as exc:
-            pass # already dead
+            pass  # already dead
         time.sleep(timeout/4)
 
 

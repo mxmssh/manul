@@ -4,7 +4,9 @@
 
 ![Logo](misc/manul_logo.jpg?raw=true "ASCII Logo of Manul")
 
-Manul is a coverage-guided parallel fuzzer for open-source and blackbox binaries on Windows, Linux and MacOS (beta) written in pure Python.
+Manul is a coverage-guided parallel fuzzer for open-source and black-box binaries on Windows, Linux and macOS (beta) written in pure Python.
+
+
 
 # Quick Start
 ```
@@ -16,6 +18,7 @@ mkdir out
 echo "AAAAAA" > in/test
 python3 manul.py -i in -o out -n 4 "linux/test_afl @@"
 ```
+
 ### Installing Radamsa
 
 ```
@@ -36,13 +39,19 @@ There is no need to install radamsa on Windows, Manul is distributed with radams
 
 If you managed to find a new bug using Manul please contact me and I will add you in the list.
 
+
+
 # Demo
 
 ![Short Demo](misc/manul_screen_demo.gif)
 
+
+
 # Dependencies
 1. [psutil](https://pypi.org/project/psutil/)
-2. Python 2.7+ (will be deprecated after 1 Jan. 2020) or Python 3.7+ (prefered)
+2. Python 2.7+ (will be deprecated after 1 Jan. 2020) or Python 3.7+ (preferred)
+
+
 
 # Coverage-guided fuzzing
 
@@ -50,7 +59,7 @@ Currently, Manul supports two types of instrumentation: AFL-based (afl-gcc, afl-
 
 ## Coverage-guided fuzzing (AFL instrumentation mode)
 
-Instrument your target with ```afl-gcc``` or ```afl-clang-fast``` and ```Address Sanitizier``` (recommended for better results). For example:
+Instrument your target with ```afl-gcc``` or ```afl-clang-fast``` and ```Address Sanitizer``` (recommended for better results). For example:
 ```
 CC=afl-gcc CXX=afl-g++ CFLAGS=-fsanitize=address CXXFLAGS=-fsanitize=address cmake <path_to_your_target>
 make -j 8
@@ -61,13 +70,13 @@ USE_ASAN=1 CC=afl-clang-fast CXX=afl-clang-fast++ cmake <path_to_your_target>
 make -j 8
 ```
 
-See [this instruction](http://lcamtuf.coredump.cx/afl/QuickStartGuide.txt) for more details.
+See [these instructions](http://lcamtuf.coredump.cx/afl/QuickStartGuide.txt) for more details.
 
 ## Coverage-guided fuzzing (DBI mode)
 
 You don't need to instrument your target in this mode but you need to download the latest version of DynamoRIO framework for Windows or Linux. The working version of Intel PIN is provided with Manul. You can find it in the ```dbi_clients_src/pin/pin-3.6-97554-g31f0a167d-gcc-linux``` folder.
 
-Manul is distributed with x86/x64 pre-compiled clients for Linux and Windows. You can find them in the following folders:
+Manul is distributed with x86/x64 precompiled clients for Linux and Windows. You can find them in the following folders:
 ```
 linux/dbi_32|dbi_64/afl-pin.so (Intel PIN client)
 linux/dbi_32|dbi_64/libbinafl.so (DynamoRIO client)
@@ -75,7 +84,7 @@ win/dbi_32|dbi_64/binafl.dll
 ```
 Unfortunately, DynamoRIO is not officially supported on OS X. Intel PIN client on OS X is not yet ported.
 
-### Using DynamoRIO to fuzz blackbox binaries
+### Using DynamoRIO to fuzz black-box binaries
 
 You can find DynamoRIO release packages at [DynamoRIO download page](https://github.com/DynamoRIO/dynamorio/wiki/Downloads). The supported version of DynamoRIO is 7.0.0-RC1 (see the next section if you need the latest version of DynamoRIO).
 
@@ -90,7 +99,7 @@ dbi_client_root = /home/max/manul/linux/dbi_64/libbinafl.so
 dbi_client_libs = None
 ```
 
-IMPORTANT NOTE: You should use 32bit launcher and 32bit client to fuzz 32bit binaries and 64bit launcher and 64bit client for 64bit binaries!
+IMPORTANT NOTE: You should use 32-bit launcher and 32-bit client to fuzz 32-bit binaries and 64-bit launcher and 64-bit client for 64-bit binaries!
 
 #### Compiling DynamoRIO client library
 
@@ -111,9 +120,11 @@ make
 If you need to compile 32-bit library, you should download DynamoRIO-i386-Linux-```*```.tar.gz archive instead of x86_64 and specify ```CFLAGS=-m32 CXXFLAGS=-m32``` before ```cmake``` command.
 
 
-### Using Intel PIN to fuzz blackbox binaries on Linux
+### Using Intel PIN to fuzz black-box binaries on Linux
 
 TBD
+
+
 
 # Command-Line Arguments
 
@@ -138,19 +149,21 @@ Required parameters:
 
 ```
 
+
+
 # Configuration File Options
 
 Manul is distributed with default ```manul.config``` file where user can find all supported options and usage examples. Options should be specified in the following format ```Format: <option_name> = <value>```. Symbol ```#``` can be used to ignore a line.
 
 #### Dictionary
 
-```dict = /home/max/dictionaries/test.dict```. AFL mutation strategy allows user to specify a list of custom tokens that can be inserted at random places in the fuzzed file. Manul supports this functionality via this option (absolute paths prefered).
+```dict = /home/max/dictionaries/test.dict```. AFL mutation strategy allows user to specify a list of custom tokens that can be inserted at random places in the fuzzed file. Manul supports this functionality via this option (absolute paths preferred).
 
 #### Mutator weights
 ```mutator_weights=afl:7,radamsa:2,my_mutator:1```. Mutator weights allow user to tell Manul how many mutations per 10 executions should be performed by certain fuzzer. In this example, AFL mutator will be executed in 7/10 mutations, Radamsa 2/10 and some custom ```my_mutator``` will get 1/10. If you want to disable certain mutator, the weight should be assigned to 0 (e.g. ```mutator_weights=afl:0,radamsa:1,my_mutator:9```).
 
-#### Determenistic Seed (Radamsa Option)
-```determenistic_seed = False|True```. By providing ```True```, Radamsa mutations will become determentistic thereby each run of Manul will lead to same outputs.
+#### Deterministic Seed (Radamsa Option)
+```deterministic_seed = False|True```. By providing ```True```, Radamsa mutations will become deterministic thereby each run of Manul will lead to same outputs.
 
 #### Print Summary per Thread
 ```print_per_thread = False|True```. By enabling this option, Manul will print summary for each thread being executed instead of total summary.
@@ -179,8 +192,8 @@ Manul is distributed with default ```manul.config``` file where user can find al
 
 #### Netslave and Netmaster Options
 
-The options ```net_config_master``` and ```net_config_slave``` are used to distrubute manul instances over network. You have to perform the following 3 steps to run distributed fuzzing.
-1. Create a file with a list of hosts in the following format: ```IP:port``` where your slaves will be executed. 
+The options ```net_config_master``` and ```net_config_slave``` are used to distribute Manul instances over network. You have to perform the following 3 steps to run distributed fuzzing.
+1. Create a file with a list of hosts in the following format: ```IP:port``` where your slaves will be executed.
 2. Start all Manul slave instances on remote machines (with all required options and path to target binary) and enable the following option:
 ```net_config_slave = 0.0.0.0:1337```. Manul will launch the instance and will wait for incoming connection from master instance on port 1337.
 3. Start the master instance and provide the file with a list of slave instances created on Step 1 using ```net_config_master = file_name```.
@@ -196,8 +209,8 @@ The options ```net_config_master``` and ```net_config_slave``` are used to distr
 #### Disable Stats
 ```no_stats = False|True``` - save statistics.
 
-#### Bitmap Syncronization Frequency (5000 recommended for DBI mode)
-```sync_freq = 10000```. Allows user to change coverage bitmap syncronization frequency. This options tells Manul how often it should syncronize coverage between parallel fuzzing instances. Lower value decreases performance but increases coordination between instances.
+#### Bitmap Synchronization Frequency (5000 recommended for DBI mode)
+```sync_freq = 10000```. Allows user to change coverage bitmap synchronization frequency. This options tells Manul how often it should synchronize coverage between parallel fuzzing instances. Lower value decreases performance but increases coordination between instances.
 
 #### Custom Path to Save Output
 ```#custom_path = test_path``` - this option allows to save the test case in the custom folder (if target wants to load it from some predefined place).
@@ -210,17 +223,19 @@ The options ```net_config_master``` and ```net_config_slave``` are used to distr
 
 #### Network Fuzzing (experimental)
 
-```target_ip_port = 127.0.0.1:7715|None``` - used to spefiy target IP and PORT.
-```target_protocol = tcp|tcp``` - used to spefify the protocol to send input in the target over network.
+```target_ip_port = 127.0.0.1:7715|None``` - used to specify target IP and PORT.
+```target_protocol = tcp|tcp``` - used to specify the protocol to send input in the target over network.
 ```net_sleep_between_cases = 0.0```. This option can be used to define a delay between test cases being send in the target.
 
 Currently, network fuzzing is an experimental feature (see issues for more details).
 
-# Adding Custom Mutator 
+
+
+# Adding Custom Mutator
 Custom mutator can be added in the following three steps:
 Step 1. Create a python (.py) file and give it some name (e.g. example_mutator.py)
 
-Step 2. Create two functions ```def init(fuzzer_id)``` and ```def mutate(data)```. See [example_mutator](example_mutator.py) for more details. Manul will call ```init``` function during fuzzing initalization and ```mutate``` for each file being provided into the target.
+Step 2. Create two functions ```def init(fuzzer_id)``` and ```def mutate(data)```. See [example_mutator](example_mutator.py) for more details. Manul will call ```init``` function during fuzzing initialization and ```mutate``` for each file being provided into the target.
 
 Step 3. Enable mutator by specifying its name using ```mutator_weights``` in ```manul.config```. E.g. ```mutator_weights=afl:2,radamsa:0,example_mutator:8```.
 
