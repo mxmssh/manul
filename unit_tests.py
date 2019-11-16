@@ -36,7 +36,7 @@ def test_bitflip(data, iteration_id):
     if not last_str or last_str != expected_output_1_bit[iteration_id]:
         print("bitflip1 failed, output is %s" % last_str)
     else:
-        print("bitflip1 successed")
+        print("bitflip1 succeeded")
 
     last_str = None
     data = copy.copy(original_data)
@@ -50,7 +50,7 @@ def test_bitflip(data, iteration_id):
     if not last_str or last_str != expected_output_2_bits[iteration_id]:
         print("bitflip2 failed, output is %s" % last_str)
     else:
-        print("bitflip2 successed")
+        print("bitflip2 succeeded")
 
     last_str = None
     data = copy.copy(original_data)
@@ -64,7 +64,7 @@ def test_bitflip(data, iteration_id):
     if not last_str or last_str != expected_output_4_bits[iteration_id]:
         print("bitflip4 failed, output is %s" % last_str)
     else:
-        print("bitflip4 successed")
+        print("bitflip4 succeeded")
 
     return True
 
@@ -86,7 +86,7 @@ def test_byteflip(data, iteration_id):
     if not last_str or last_str != expected_output_1_byte[iteration_id]:
         print("byteflip1 failed, output is %s" % last_str)
     else:
-        print("byteflip1 successed")
+        print("byteflip1 succeeded")
 
     last_str = None
     data = copy.copy(original_data)
@@ -101,7 +101,7 @@ def test_byteflip(data, iteration_id):
     if not last_str or last_str != expected_output_2_bytes[iteration_id]:
         print("byteflip2 failed, output is %s" % last_str)
     else:
-        print("byteflip2 successed")
+        print("byteflip2 succeeded")
 
     last_str = None
     data = copy.copy(original_data)
@@ -116,15 +116,15 @@ def test_byteflip(data, iteration_id):
     if not last_str or last_str != expected_output_4_bytes[iteration_id]:
         print("byteflip4 failed, output is %s" % last_str)
     else:
-        print("byteflip4 successed")
+        print("byteflip4 succeeded")
     return True
 
 
 def test_arithmentic(data, iteration_id):
     res = None
     expected_output_1_byte = ["414141414141414141", "41414141", "4141", "41"]
-    expected_output_2_bytes = ["404141414141414142", "40414142", "4042", "41"] # TODO: check if it is correct output
-    expected_output_4_bytes = ["414140414141414142", "41414042", "4141", "41"] # TODO: check if it is correct output
+    expected_output_2_bytes = ["404141414141414142", "40414142", "4042", "41"]  # TODO: check if it is correct output
+    expected_output_4_bytes = ["414140414141414142", "41414042", "4141", "41"]  # TODO: check if it is correct output
     original_data = copy.copy(data)  # sic!
     last_str = None
     res = None
@@ -137,7 +137,7 @@ def test_arithmentic(data, iteration_id):
     if not last_str or last_str != expected_output_1_byte[iteration_id]:
         print("arith1 failed, output is %s" % last_str)
     else:
-        print("arith1 successed")
+        print("arith1 succeeded")
 
     last_str = None
     data = copy.copy(original_data)
@@ -153,7 +153,7 @@ def test_arithmentic(data, iteration_id):
     if not last_str or last_str != expected_output_2_bytes[iteration_id]:
         print("arith2 failed, output is %s" % last_str)
     else:
-        print("arith2 successed")
+        print("arith2 succeeded")
 
     last_str = None
     data = copy.copy(original_data)
@@ -168,7 +168,7 @@ def test_arithmentic(data, iteration_id):
     if not last_str or last_str != expected_output_4_bytes[iteration_id]:
         print("arith4 failed, output is %s" % last_str)
     else:
-        print("arith4 successed")
+        print("arith4 succeeded")
     return True
 
 
@@ -190,7 +190,7 @@ def test_interesting(data, iteration_id):
     if not last_str or last_str != expected_output_1_byte[iteration_id]:
         print("interesting1 failed, output is %s" % last_str)
     else:
-        print("interesting1 successed")
+        print("interesting1 succeeded")
 
     last_str = None
     data = copy.copy(original_data)
@@ -206,7 +206,7 @@ def test_interesting(data, iteration_id):
     if not last_str or last_str != expected_output_2_bytes[iteration_id]:
         print("interesting2 failed, output is %s" % last_str)
     else:
-        print("interesting2 successed")
+        print("interesting2 succeeded")
 
     last_str = None
     data = copy.copy(original_data)
@@ -221,7 +221,7 @@ def test_interesting(data, iteration_id):
     if not last_str or last_str != expected_output_4_bytes[iteration_id]:
         print("interesting4 failed, output is %s" % last_str)
     else:
-        print("interesting4 successed")
+        print("interesting4 succeeded")
     return True
 
 tokens_list = [b"very_long_dict_string777777777777777", b"test", b"ext1", b"a"]
@@ -231,19 +231,19 @@ def test_dict(data, iteration_id):
     expected_output_insert = [b'very_long_dict_string777777777777777AAAAAAAAA', b'AtestAAA', b"AAext1", b"Aa"]
     data_clean = copy.copy(data)
 
-    #call AFL init to initialize dictionary
+    # call AFL init to initialize dictionary
     AFLFuzzer(tokens_list, None, "test_file")
 
     data, func_state = dictionary_overwrite(data, [iteration_id, iteration_id])
     if data != expected_output_overwrite[iteration_id]:
         print("test_dict_overwrite failed, output is %s" % data)
     else:
-        print("test_dict_overwrite succeded")
+        print("test_dict_overwrite succeeded")
     data, func_state = dictionary_insert(data_clean, [iteration_id, iteration_id])
     if data != expected_output_insert[iteration_id]:
         print("test_dict_insert failed, output is %s" % data)
     else:
-        print("test_dict_insert succeded")
+        print("test_dict_insert succeeded")
     return True
 
 
@@ -260,15 +260,15 @@ def test_havoc(data, iteration_id):
     data = havoc_randomly_add(data)
     print("Randomly add:", data)
     data = havoc_randomly_substract(data)
-    print("Randomly substract:", data)
+    print("Randomly subtract:", data)
     data = havoc_randomly_add_2bytes(data)
     print("Randomly add 2 bytes:", data)
     data = havoc_randomly_substract_2bytes(data)
-    print("Randomly substract 2 bytes:", data)
+    print("Randomly subtract 2 bytes:", data)
     data = havoc_randomly_add_4bytes(data)
     print("Randomly add 4 bytes:", data)
     data = havoc_randomly_substract_4bytes(data)
-    print("Randomly substract 4 bytes:", data)
+    print("Randomly subtract 4 bytes:", data)
     data = havoc_remove_randomly_block(data)
     print("Randomly remove block:", data)
     data = havoc_clone_randomly_block(data)
@@ -279,14 +279,14 @@ def test_havoc(data, iteration_id):
     print("Randomly overwrite with dict:", data)
     data = havoc_insert_with_dict(data)
     print("Randomly insert with dict:", data)
-    print("all havocs succeded")
+    print("all havocs succeeded")
     return True
 
 
 def test_splice(data, iteration_id):
     # merge with manul.config or unit_tests.py :)
     print("Starting splice")
-    queue_path = "./" # current path where we run this unit_tests.py
+    queue_path = "./"  # current path where we run this unit_tests.py
     list_of_files = [(1, "manul.config"), (1, "unit_tests.py")]
     data, func_state = splice(data, list_of_files, queue_path, None)
     print("Result of splice:", data)
@@ -314,14 +314,14 @@ def extra_test_havoc_remove_randomly_block():
             print("extra_test_havoc_remove_randomly_block failed!")
 
 if __name__ == "__main__":
-    test_cycle(bytearray("AAAAAAAAA", "utf-8")) # regular string
-    test_cycle(bytearray("AAAA", "utf-8")) # short string
-    test_cycle(bytearray("AA", "utf-8")) # shorter string
-    test_cycle(bytearray("A", "utf-8")) # the shortest string
+    test_cycle(bytearray("AAAAAAAAA", "utf-8"))  # regular string
+    test_cycle(bytearray("AAAA", "utf-8"))  # short string
+    test_cycle(bytearray("AA", "utf-8"))  # shorter string
+    test_cycle(bytearray("A", "utf-8"))  # the shortest string
     extra_test_havoc_remove_randomly_block()
 
     if is_bytearrays_equal(b"AAAAAA", b"AAAAAA") == False or is_bytearrays_equal(b"AAAAAAA", b"BEBEBEBE") == True:
         print("is_bytearray_equal failed")
     else:
-        print("is_bytearray_equal succeded")
+        print("is_bytearray_equal succeeded")
     #test_cycle(bytearray("")) # no string at all

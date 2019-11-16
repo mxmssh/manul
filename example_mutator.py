@@ -16,7 +16,7 @@
 #   limitations under the License.
 
 def init():
-    print("[PLUGIN] Init sucessfully completed")
+    print("[PLUGIN] Init successfully completed")
     return
 
 def mutate(data):

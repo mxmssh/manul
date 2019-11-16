@@ -62,7 +62,7 @@ def get_slaves_ips(file_path):
         res.append((ip, int(port)))
     return res
 
-def get_remote_threads_count(ips): # TODO: test it on 3 and more slaves
+def get_remote_threads_count(ips):  # TODO: test it on 3 and more slaves
 
     res = list()
     total_threads_count = 0
@@ -85,7 +85,7 @@ def get_remote_threads_count(ips): # TODO: test it on 3 and more slaves
             ERROR("Violation of protocol. Slave returned empty string")
 
         try:
-            tokens = data.split(" ") #0 - size, 1 - nthreads 2 - threads_count
+            tokens = data.split(" ")  # 0 - size, 1 - nthreads 2 - threads_count
             token = tokens[1]
             if token != "nthreads":
                 sock.close()
@@ -196,7 +196,7 @@ def get_files_list_from_master(ip_port, nthreads):
 
         content = data
         INFO(1, None, None, "Received files list from master: %s" % content)
-        if bytes_read == 0: # at first iteration reading size of data that master wants to actually send
+        if bytes_read == 0:  # at first iteration reading size of data that master wants to actually send
             try:
                 content = content.split(" ")
                 size_needed = int(content[0])
@@ -211,7 +211,7 @@ def get_files_list_from_master(ip_port, nthreads):
         files_list += content
         bytes_read += len(data)
 
-    # Step 4. Parsing str as list to actual list. Master sends it as list of lists splited by thread. I don't want to
+    # Step 4. Parsing str as list to actual list. Master sends it as list of lists split by thread. I don't want to
     # parse list of lists, so I just split them again later.
     if len(files_list) == 0:
         ERROR("File lists is empty, nothing to fuzz")
@@ -227,7 +227,7 @@ def get_files_list_from_master(ip_port, nthreads):
     return files_list
 
 def sync_bitmap_net(virgin_bits, remote_virgin_bits):
-    INFO(0, None, None, "Syncronizing bitmaps")
+    INFO(0, None, None, "Synchronizing bitmaps")
     new_cov = False
     for i in range(0, SHM_SIZE):
       byte = int(remote_virgin_bits[i]) # TODO: make sure it works
@@ -262,7 +262,7 @@ def recv_data(socket_instance):
         data = rec_data[1]
     except:
         socket_instance.close()
-        ERROR("Protocol violation, lenght or token is not specified")
+        ERROR("Protocol violation, length or token is not specified")
     bytes_read = len(data)
 
     while bytes_read < length:
@@ -322,7 +322,7 @@ def receive_bitmap_slave(ip_port, virgin_bits):
         elif data.startswith(SEND_BITMAP):
             INFO(1, None, None, "Receiving new bitmap")
             data = recv_data(connection)
-            INFO(1, None, None, "Syncronizing bitmaps")
+            INFO(1, None, None, "Synchronizing bitmaps")
             sync_bitmap_net(virgin_bits, data)
         else:
             connection.close()
