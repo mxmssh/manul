@@ -223,6 +223,8 @@ class Command(object):
 
     def exec_command_dbi_persistence(self, cmd):
         if self.dbi_restart_target:
+            self.dbi_persistence_on.setup_pipe()
+
             if sys.platform == "win32":
                 self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             else:
@@ -232,8 +234,11 @@ class Command(object):
                 ERROR("Failed to start the target error code = %d, output = %s" %
                       (self.process.returncode, self.process.stdout))
 
-            self.dbi_persistence_on.setup_pipe()
+            INFO(1, None, None, "Target sucessfully started, waiting for result")
+
             self.dbi_restart_target = False
+            if sys.platform == "win32":
+                self.dbi_persistence_on.connect_pipe_win()
 
         print("PID %d" % self.process.pid)
         if not is_alive(self.process.pid):
@@ -1148,7 +1153,7 @@ def configure_dbi(args, target_binary, is_debug):
 
             if args.dbi_target_method:
                 dbi_tool_params += "-target_method %s " % args.dbi_target_method
-            elif args.dbi_target_func:
+            elif args.dbi_target_offset:
                 dbi_tool_params += "-target_offset %s " % args.dbi_target_offset
             else:
                 ERROR("Please specify target method or target offset in manul.config")
@@ -1297,7 +1302,7 @@ def parse_args():
     parser.add_argument('--dbi_client_root', help = argparse.SUPPRESS)
     parser.add_argument('--dbi_client_libs', help = argparse.SUPPRESS)
     parser.add_argument("--dbi_persistence_mode", default = 0, type=int, help = argparse.SUPPRESS)
-    parser.add_argument("--dbi_target_method", default = "main", help = argparse.SUPPRESS)
+    parser.add_argument("--dbi_target_method", default = None, help = argparse.SUPPRESS)
     parser.add_argument("--dbi_target_offset", default = None, help= argparse.SUPPRESS)
     parser.add_argument("--dbi_target_module", default = None, help = argparse.SUPPRESS)
     parser.add_argument("--dbi_fuzz_iterations", default = 5000, type=int, help = argparse.SUPPRESS)

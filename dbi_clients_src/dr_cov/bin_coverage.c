@@ -282,7 +282,7 @@ instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *i
     drreg_unreserve_register(drcontext, bb, inst, reg);
     drreg_unreserve_aflags(drcontext, bb, inst);
     if(options.debug_mode || options.debug_manul)
-        dr_fprintf(winafl_data.log, "Done");
+        dr_fprintf(winafl_data.log, "Done\n");
     return DR_EMIT_DEFAULT;
 }
 
@@ -325,7 +325,7 @@ setup_pipes() {
          0,              // default attributes
          NULL);          // no template file
     if (options.debug_manul)
-        dr_fprintf(winafl_data.log, "Done");
+        dr_fprintf(winafl_data.log, "Done\n");
     if (pipe == INVALID_HANDLE_VALUE) ASSERT_WRAP("error connecting to pipe");
 }
 
@@ -562,11 +562,17 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
         dr_fprintf(winafl_data.log, "Module loaded, %s\n", module_name);
 
     if(options.fuzz_module[0]) {
+        if (options.debug_mode || options.debug_manul)
+            dr_fprintf(winafl_data.log, "Comparing %s %s\n", module_name, options.fuzz_module);
         if (strcasecmp(module_name, options.fuzz_module) == 0) {
+            if(options.debug_mode || options.debug_manul)
+                dr_fprintf(winafl_data.log, "Found target module %s\n", options.fuzz_module);
             if(options.fuzz_offset) {
                 to_wrap = info->start + options.fuzz_offset;
             } else {
                 //first try exported symbols
+                if (options.debug_mode || options.debug_manul)
+                    dr_fprintf(winafl_data.log, "Wrapping %s\n", options.fuzz_method);
                 to_wrap = (app_pc)dr_get_proc_address(info->handle, options.fuzz_method);
                 if(!to_wrap) {
                     //if that fails, try with the symbol access library
@@ -580,11 +586,13 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
                 }
             }
             if (options.persistence_mode == 1) // # func wrap mode
-                drwrap_wrap_ex(to_wrap, pre_fuzz_handler, post_fuzz_handler,
-                        NULL, options.callconv);
+                if (!drwrap_wrap_ex(to_wrap, pre_fuzz_handler, post_fuzz_handler,
+                                    NULL, options.callconv))
+                    dr_fprintf(winafl_data.log, "Warning! Failed to wrap target function\n");
             if (options.persistence_mode == 2) // # in_app
-                drwrap_wrap_ex(to_wrap, pre_loop_start_handler,
-                        NULL, NULL, options.callconv);
+                if (!drwrap_wrap_ex(to_wrap, pre_loop_start_handler,
+                                    NULL, NULL, options.callconv))
+                    dr_fprintf(winafl_data.log, "Warning! Failed to wrap target function\n");
         }
     }
 

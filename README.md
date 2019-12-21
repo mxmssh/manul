@@ -16,6 +16,7 @@ mkdir out
 echo "AAAAAA" > in/test
 python3 manul.py -i in -o out -n 4 "linux/test_afl @@"
 ```
+
 ### Installing Radamsa
 
 ```
@@ -42,7 +43,7 @@ If you managed to find a new bug using Manul please contact me and I will add yo
 
 # Dependencies
 1. [psutil](https://pypi.org/project/psutil/)
-2. Python 2.7+ (will be deprecated after 1 Jan. 2020) or Python 3.7+ (prefered)
+2. pywin32 ('''pip install pywin32''') on Windows platform (required for DBI persistence mode only).
 
 # Coverage-guided fuzzing
 
