@@ -21,20 +21,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-int main(int argc, char** argv)
-{
+char *name = NULL;
+
+void open_file() {
     char *buf = NULL;
     int size = 0;
-    if(argc < 2) {
-        printf("Usage: %s <input file>\n", argv[0]);
-        exit(-1);
-    }
-    FILE *fp = fopen(argv[1], "rb");
+    FILE *fp = fopen(name, "rb");
     if (!fp) {
-        printf("Couldn't open file specified %s", argv[1]);
-        exit(-1);
+        printf("Couldn't open file specified %s", name);
+        return;
     }
-    printf("Opening %s\n", argv[1]);
+    printf("Opening %s\n", name);
     // obtain file size:
     fseek(fp , 0 , SEEK_END);
     size = ftell(fp);
@@ -63,4 +60,14 @@ int main(int argc, char** argv)
 
     printf("Parsed %d bytes\n", size);
     free(buf);
+}
+
+int main(int argc, char** argv)
+{
+    if(argc < 2) {
+        printf("Usage: %s <input file>\n", argv[0]);
+        exit(-1);
+    }
+    name = argv[1];
+    open_file();
 }
