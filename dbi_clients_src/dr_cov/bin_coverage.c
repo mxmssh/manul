@@ -535,6 +535,8 @@ post_fuzz_handler(void *wrapcxt, void *user_data)
 
     fuzz_target.iteration++;
     if(fuzz_target.iteration == options.fuzz_iterations) {
+        if (options.debug_manul)
+            dr_fprintf(winafl_data.log, "Target iteration exceeds limit, exiting the target\n");
         WriteCommandToPipe('Q');
         dr_exit_process(0);
     }

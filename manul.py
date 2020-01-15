@@ -193,46 +193,51 @@ class Command(object):
         elif res == 'K' and self.dbi_persistence_mode == 2:
             INFO(1, None, None, "Target sucessfully reached the target function (pre_loop_handler) for the first time")
             self.dbi_persistence_on.send_command('P') # notify the target that we received command
-        elif res == 'T':
-            # check if we actually crashed. We setup timeout in 1 second because we already spent time in send_command,
-            # if the target actually crashed we should receive the answer immediately. TODO: it will not work for PY2
-            if not self.handle_return(1):
-                ERROR("Failed to read command from the target within given timeframe (pre_handler). \
-                Most likely app failed to reach the target function")
+        elif res == 'Q':
+            INFO(1, None, None, "Target notified about exit (after post_handler in target)")
+            self.dbi_restart_target = True
+            return True
         else:
             ERROR("Received wrong command from the instrumentation library (pre_handler)")
+
+        return False
 
 
     def handle_dbi_post(self):
         res = self.dbi_persistence_on.recv_command()
         if res == 'K':
             INFO(1, None, None, "Target sucessfully exited from the target function (post_handler)")
-        elif res == 'Q':
-            INFO(1, None, None, "Target notified about exit (post_handler)")
-            self.dbi_restart_target = True
         elif res == 'T':
-            # check if we actually crashed. We setup timeout in 1 second because we already spent time in send_command,
-            # if the target actually crashed we should receive the answer immediately. TODO: it will not work for PY2
-            if not self.handle_return(1):
-                ERROR("Failed to read command from the target within given timeframe (post_handler). \
-                Most likely app failed to finish the target function within givent timeframe")
+            WARNING(None, "The target failed to answer within given timeframe, restarting")
+            self.dbi_restart_target = True
+        elif res == "":
+            WARNING(None, "No answer from the target, restarting.")
+            # the target should be restarted after this (it can be a crash)
+            self.dbi_restart_target = True
+            return True
         else:
-
             ERROR("Received wrong command from the instrumentation library (post_handler)")
+        return False
+
 
 
     def exec_command_dbi_persistence(self, cmd):
         if self.dbi_restart_target:
-            self.dbi_persistence_on.setup_pipe()
+            self.dbi_persistence_on.close_pipes() # close if it is not a first run
 
             if sys.platform == "win32":
+                self.dbi_persistence_on.setup_pipe()
                 self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if not is_alive(self.process.pid):
+                    ERROR("Failed to start the target error code = %d, output = %s" %
+                          (self.process.returncode, self.process.stdout))
             else:
                 self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                                 preexec_fn=os.setsid)
-            if not is_alive(self.process.pid):
-                ERROR("Failed to start the target error code = %d, output = %s" %
-                      (self.process.returncode, self.process.stdout))
+                if not is_alive(self.process.pid):
+                    ERROR("Failed to start the target error code = %d, output = %s" %
+                          (self.process.returncode, self.process.stdout))
+                self.dbi_persistence_on.setup_pipe()
 
             INFO(1, None, None, "Target sucessfully started, waiting for result")
 
@@ -240,16 +245,16 @@ class Command(object):
             if sys.platform == "win32":
                 self.dbi_persistence_on.connect_pipe_win()
 
-        print("PID %d" % self.process.pid)
-        if not is_alive(self.process.pid):
-            ERROR("The target is dead1")
-        self.handle_dbi_pre()
-        if not is_alive(self.process.pid):
-            ERROR("The target is dead2")
+        if self.handle_dbi_pre():
+            # It means that target issued quit command, we should handle it properly
+            return 0, ""
+
         if self.dbi_persistence_mode == 1:
-            self.handle_dbi_post()
-        if not is_alive(self.process.pid):
-            ERROR("The target is dead3")
+            if self.handle_dbi_post():
+                self.handle_return(5) # we use custom timeout of 5 seconds here to check if our target is still alive
+                return self.process.returncode, self.err
+
+        return 0, ""
 
     def handle_return(self, default_timeout):
         if PY3:
@@ -272,7 +277,8 @@ class Command(object):
 
         if self.dbi_persistence_on:
             INFO(1, None, None, "Persistence mode")
-            return self.exec_command_dbi_persistence(cmd)
+            self.returncode, self.err = self.exec_command_dbi_persistence(cmd)
+            return
 
 
         if sys.platform == "win32":
@@ -292,7 +298,7 @@ class Command(object):
         if isinstance(self.err, (bytes, bytearray)):
             self.err = self.err.decode("utf-8", 'replace')
 
-        if self.forkserver_on:
+        if self.forkserver_on or self.dbi_persistence_on:
             return self.returncode, self.err
         return self.process.returncode, self.err
 
@@ -1081,8 +1087,6 @@ def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_s
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     printing.DEBUG_PRINT = args.debug # FYI, multiprocessing causes global vars to be reinitialized.
     INFO(0, None, None, "Starting fuzzer %d" % i)
-    if args.dbi:
-        args.timeout *= 30 #DBI introduce ~30x overhead
 
     fuzzer_instance = Fuzzer(files_list, i, virgin_bits, args, stats_array, restore_session, crash_bits, dbi_setup)
     fuzzer_instance.run() # never return
@@ -1499,5 +1503,6 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         INFO(0, None, None, "Stopping all fuzzers and threads")
         kill_all(os.getpid())
+        # TODO: ideally, if we have pipes we should clean them with close() function here.
         INFO(0, None, None, "Stopped, exiting")
         sys.exit()

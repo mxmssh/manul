@@ -1,7 +1,9 @@
 from printing import *
 import os
 import random
-import win32pipe, win32file, pywintypes
+if sys.platform == "win32":
+    import win32pipe, win32file, pywintypes
+from select import select
 
 COMMAND_CYCLE_FINISH = 'K'
 COMMAND_CYCLE_START = 'P'
@@ -29,7 +31,7 @@ def gen_pipe_name():
         ERROR("Invalid platform for DBI persistent mode")
 
 #TODO: remove tmp files on exit
-#TODO (high priority): timeouts for all functions, since PIPES are blocking on Linux
+#TODO (high priority): timeouts for pipes on Windows (blocking situations)
 class PipeHandler(object):
     def __init__(self):
         self.pipe_name_in, self.pipe_name_out = gen_pipe_name()
@@ -94,9 +96,9 @@ class PipeHandler(object):
 
     def close_pipes(self):
         if sys.platform == "win32":
-            return self.close_pipes_win(self)
+            return self.close_pipes_win()
         elif "linux" in sys.platform:
-            return self.close_pipes_lin(self)
+            return self.close_pipes_lin()
         else:
             ERROR("Invalid platform for DBI persistent mode")
 
@@ -142,10 +144,15 @@ class PipeHandler(object):
 
     @staticmethod
     def recv_command_lin(self):
+        r, w, e = select([self.pipe_out], [], [], 3)
         INFO(1, None, None, "Reading PIPE %s"  % self.pipe_out)
-        res = self.pipe_out.read(1)
-        INFO(1, None, None, "Received %s" % res)
-        return res.decode("utf-8")
+        if self.pipe_out in r:
+            res = self.pipe_out.read(1)
+            INFO(1, None, None, "Received %s" % res)
+            return res.decode("utf-8")
+        else:
+            WARNING(None, "PIPE timeout encountered, restarting the target")
+            return "T"
 
     def recv_command(self):
         if sys.platform == "win32":
