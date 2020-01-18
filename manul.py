@@ -189,10 +189,16 @@ class Command(object):
         if res == 'P':
             # our target sucessfully reached the target function and is waiting for the next command
             INFO(1, None, None, "Target sucessfully reached the target function (pre_handler)")
-            self.dbi_persistence_on.send_command('F') # notify the target that we received command
+            send_res = self.dbi_persistence_on.send_command('F') # notify the target that we received command
+            if send_res == 'T': # yes, it can happen when we are sending command too
+                self.dbi_restart_target = True
+                return True
         elif res == 'K' and self.dbi_persistence_mode == 2:
             INFO(1, None, None, "Target sucessfully reached the target function (pre_loop_handler) for the first time")
-            self.dbi_persistence_on.send_command('P') # notify the target that we received command
+            send_res = self.dbi_persistence_on.send_command('P') # notify the target that we received command
+            if send_res == 'T': # yes, it can happen when we are sending command too
+                self.dbi_restart_target = True
+                return True
         elif res == 'Q':
             INFO(1, None, None, "Target notified about exit (after post_handler in target)")
             self.dbi_restart_target = True
@@ -210,6 +216,7 @@ class Command(object):
         elif res == 'T':
             WARNING(None, "The target failed to answer within given timeframe, restarting")
             self.dbi_restart_target = True
+            #return True
         elif res == "":
             WARNING(None, "No answer from the target, restarting.")
             # the target should be restarted after this (it can be a crash)
@@ -223,6 +230,8 @@ class Command(object):
 
     def exec_command_dbi_persistence(self, cmd):
         if self.dbi_restart_target:
+            if self.process != None and is_alive(self.process.pid):
+                kill_all(self.process.pid)
             self.dbi_persistence_on.close_pipes() # close if it is not a first run
 
             if sys.platform == "win32":
@@ -246,12 +255,14 @@ class Command(object):
                 self.dbi_persistence_on.connect_pipe_win()
 
         if self.handle_dbi_pre():
-            # It means that target issued quit command, we should handle it properly
+            # It means that target issued quit command or we failed to send command, we should handle it properly
             return 0, ""
 
         if self.dbi_persistence_mode == 1:
             if self.handle_dbi_post():
-                self.handle_return(5) # we use custom timeout of 5 seconds here to check if our target is still alive
+                if not self.handle_return(5): # we use custom timeout of 5 seconds here to check if our target is still alive
+                    # the target can answer on communicate but be still in waiting in PIPE, we need to kill manually
+                    kill_all(self.process.pid)
                 return self.process.returncode, self.err
 
         return 0, ""

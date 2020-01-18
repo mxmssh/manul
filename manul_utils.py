@@ -136,6 +136,7 @@ def is_alive(pid):
         # alive but zombie ?
         proc = psutil.Process(pid)
         if proc.status() == psutil.STATUS_ZOMBIE:
+            printing.WARNING(None, "The process is alive but Zombie, killing it")
             kill_all(pid) # avoid Zombies in our environment
             return False
         return True

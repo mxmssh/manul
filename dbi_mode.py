@@ -120,8 +120,13 @@ class PipeHandler(object):
     @staticmethod
     def send_command_lin(self, command_str):
         INFO(1, None, None, "Sending %s into PIPE %s" % (command_str, self.pipe_in))
-        res = self.pipe_in.write(command_str.encode("utf-8"))
-        INFO(1, None, None, "Done sending command over PIPE %s" % self.pipe_in)
+        r, w, e = select([], [self.pipe_in], [], 3)
+        if self.pipe_in in w:
+            res = self.pipe_in.write(command_str.encode("utf-8"))
+            INFO(1, None, None, "Done sending command over PIPE %s" % self.pipe_in)
+        else:
+            WARNING(None, "Failed to send into PIPE, timeout. Restarting the target")
+            return 'T'
         return res
 
     def send_command(self, command_str):
@@ -144,8 +149,8 @@ class PipeHandler(object):
 
     @staticmethod
     def recv_command_lin(self):
+        INFO(1, None, None, "Reading PIPE %s,"  % self.pipe_out)
         r, w, e = select([self.pipe_out], [], [], 3)
-        INFO(1, None, None, "Reading PIPE %s"  % self.pipe_out)
         if self.pipe_out in r:
             res = self.pipe_out.read(1)
             INFO(1, None, None, "Received %s" % res)
