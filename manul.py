@@ -190,7 +190,7 @@ class Command(object):
             # our target sucessfully reached the target function and is waiting for the next command
             INFO(1, None, None, "Target sucessfully reached the target function (pre_handler)")
             send_res = self.dbi_persistence_on.send_command('F') # notify the target that we received command
-            if send_res == 'T': # yes, it can happen when we are sending command too
+            if send_res == 'T': # TODO can it happen when we are sending command ?
                 self.dbi_restart_target = True
                 return True
         elif res == 'K' and self.dbi_persistence_mode == 2:
@@ -227,15 +227,15 @@ class Command(object):
         return False
 
 
-
     def exec_command_dbi_persistence(self, cmd):
         if self.dbi_restart_target:
             if self.process != None and is_alive(self.process.pid):
                 kill_all(self.process.pid)
-            self.dbi_persistence_on.close_pipes() # close if it is not a first run
+                self.dbi_persistence_on.close_socket() # close if it is not a first run
+
+            self.dbi_persistence_on.setup_socket()
 
             if sys.platform == "win32":
-                self.dbi_persistence_on.setup_pipe()
                 self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 if not is_alive(self.process.pid):
                     ERROR("Failed to start the target error code = %d, output = %s" %
@@ -243,29 +243,30 @@ class Command(object):
             else:
                 self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                                 preexec_fn=os.setsid)
-                if not is_alive(self.process.pid):
-                    ERROR("Failed to start the target error code = %d, output = %s" %
-                          (self.process.returncode, self.process.stdout))
-                self.dbi_persistence_on.setup_pipe()
+
+            if not is_alive(self.process.pid):
+                ERROR("Failed to start the target error code = %d, output = %s" %
+                      (self.process.returncode, self.process.stdout))
 
             INFO(1, None, None, "Target sucessfully started, waiting for result")
 
             self.dbi_restart_target = False
-            if sys.platform == "win32":
-                self.dbi_persistence_on.connect_pipe_win()
 
         if self.handle_dbi_pre():
-            # It means that target issued quit command or we failed to send command, we should handle it properly
+            # It means that the target issued quit command or we failed to send command, we should handle it properly
             return 0, ""
 
         if self.dbi_persistence_mode == 1:
             if self.handle_dbi_post():
                 if not self.handle_return(5): # we use custom timeout of 5 seconds here to check if our target is still alive
-                    # the target can answer on communicate but be still in waiting in PIPE, we need to kill manually
+                    # the target can answer on communicate but be still in waiting state, we need to kill it manually
                     kill_all(self.process.pid)
                 return self.process.returncode, self.err
+        else:
+            ERROR("Persistence mode not yet supported")
 
         return 0, ""
+
 
     def handle_return(self, default_timeout):
         if PY3:
@@ -326,6 +327,7 @@ class Fuzzer:
         self.dbi = args.dbi
         self.afl_fuzzer = dict()
         self.token_dict = list()
+        self.timeout = args.timeout
         self.disable_volatile_bytes = args.disable_volatile_bytes
         net_sleep_between_cases = float(args.net_sleep_between_cases)
 
@@ -377,11 +379,10 @@ class Fuzzer:
             self.dbi_tool_params = dbi_setup[2]
             if args.dbi_persistence_mode >= 1:
                 INFO(1, None, None, "Getting PIPE name for fuzzer %d" % fuzzer_id)
-                self.dbi_pipe_handler = dbi_mode.PipeHandler()
-                pipe_name_in, pipe_name_out = self.dbi_pipe_handler.get_pipe_name()
-                INFO(1, None, None, "PIPE name in %s PIPE name out %s" % (pipe_name_in, pipe_name_out))
-                # in and out PIPEs are the same on Windows and inverted on Linux
-                self.dbi_tool_params += "-pipe_path_in %s -pipe_path_out %s" % (pipe_name_out, pipe_name_in)
+                self.dbi_pipe_handler = dbi_mode.SocketHandler(self.timeout)
+                socket_name = self.dbi_pipe_handler.get_socket_name()
+                INFO(1, None, None, "Socket name in %s" % (socket_name))
+                self.dbi_tool_params += "-socket_name %s" % (socket_name)
 
 
         self.target_ip = None
@@ -400,7 +401,7 @@ class Fuzzer:
         self.global_map = virgin_bits_global
         self.crash_bits = crash_bits  # happens not too often
 
-        self.timeout = args.timeout
+
         self.stats_array = stats_array
         self.restore = restore_session
 
@@ -1514,6 +1515,6 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         INFO(0, None, None, "Stopping all fuzzers and threads")
         kill_all(os.getpid())
-        # TODO: ideally, if we have pipes we should clean them with close() function here.
+        # TODO: ideally, if we have UDS opened we should clean them with unlink() function here.
         INFO(0, None, None, "Stopped, exiting")
         sys.exit()

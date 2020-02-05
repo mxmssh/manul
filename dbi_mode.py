@@ -1,6 +1,7 @@
 from printing import *
 import os
 import random
+import socket
 if sys.platform == "win32":
     import win32pipe, win32file, pywintypes
 from select import select
@@ -10,124 +11,90 @@ COMMAND_CYCLE_START = 'P'
 COMMAND_CRASH = 'C'
 COMMAND_FINISH = 'F'
 
-def gen_name():
-    return random.randint(1, 999999999)
+def gen_socket_name_lin():
+    return "/usr/tmp/manul_uds_socket_%d" % random.randint(1, 999999999)
 
-def gen_pipe_name_lin():
-    pipe_name_in = "/usr/tmp/manul_dbi_pipe_in_%d" % gen_name()
-    pipe_name_out = "/usr/tmp/manul_dbi_pipe_out_%d" % gen_name()
-    return pipe_name_in, pipe_name_out
+def gen_socket_name_win():
+    return r'manul_uds_socket_%d' % random.randint(1, 999999999)
 
-def gen_pipe_name_win():
-    pipe_name_in = pipe_name_out =  r'\\.\pipe\\manul_dbi_pipe_in_%d' % gen_name()
-    return pipe_name_in, pipe_name_out
-
-def gen_pipe_name():
+def gen_socket_name():
     if sys.platform == "win32":
-        return gen_pipe_name_win()
+        return gen_socket_name_win()
     elif "linux" in sys.platform:
-        return gen_pipe_name_lin()
+        return gen_socket_name_lin()
     else:
         ERROR("Invalid platform for DBI persistent mode")
 
 #TODO: remove tmp files on exit
 #TODO (high priority): timeouts for pipes on Windows (blocking situations)
-class PipeHandler(object):
-    def __init__(self):
-        self.pipe_name_in, self.pipe_name_out = gen_pipe_name()
-        self.pipe_in = None
-        self.pipe_out = None
-        self.is_pipe_connected = False
+class SocketHandler(object):
+    def __init__(self, timeout):
+        self.socket_name = gen_socket_name()
+        self.sock = None
+        self.conn = None
+        self.is_connectected = False
+        self.timeout = timeout
 
-    def get_pipe_name(self):
-        return self.pipe_name_in, self.pipe_name_out
+    def get_socket_name(self):
+        return self.socket_name
 
-    def setup_pipe_win(self):
-        INFO(1, None, None, "Opening PIPE %s" % self.pipe_name_in)
+    def setup_socket_win(self):
+        return None
+
+    def setup_socket_lin(self):
+        # Make sure the socket does not already exist
         try:
-            self.pipe_in = self.pipe_out = win32pipe.CreateNamedPipe(self.pipe_name_in,
-                win32pipe.PIPE_ACCESS_DUPLEX,
-                win32pipe.PIPE_TYPE_MESSAGE | win32pipe.PIPE_READMODE_MESSAGE | win32pipe.PIPE_WAIT,
-                1, 65536, 65536,
-                0,
-                None)
-        except OSError as e:
-            ERROR("Failed to create named pipe %s! Error %s" % (self.pipe_name_in, e.message))
+            os.unlink(self.socket_name)
+        except OSError:
+            if os.path.exists(self.socket_name):
+                ERROR("Socket already exists %s" % self.socket_name)
 
-    def setup_pipe_lin(self):
+        # Create a UDS socket
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 
-        if os.path.exists(self.pipe_name_in): #unlikely
-            os.remove(self.pipe_name_in)
-        if os.path.exists(self.pipe_name_out):
-            os.remove(self.pipe_name_out)
+        # Bind the socket to the port
+        INFO(1, None, None, "Starting UDS on %s" % self.socket_name)
+        self.sock.bind(self.socket_name)
 
-        try:
-            os.mkfifo(self.pipe_name_in)
-        except OSError as e:
-            ERROR("Failed to create named pipe %s! Error %s" % (self.pipe_name_in, e.message))
+        # Listen for incoming connections
+        self.sock.listen(1)
+        self.sock.settimeout(self.timeout) # TODO: pass timeout from config
+        self.is_connectected = False
 
-        try:
-            os.mkfifo(self.pipe_name_out)
-        except OSError as e:
-            ERROR("Failed to create named pipe %s! Error %s" % (self.pipe_name_out, e.message))
-
-        INFO(1, None, None, "Opening PIPE %s" % self.pipe_name_in)
-        self.pipe_in = open(self.pipe_name_in, 'wb', 0)
-        INFO(1, None, None, "Opening PIPE %s" % self.pipe_name_out)
-        self.pipe_out = open(self.pipe_name_out, 'rb', 0)
-
-    def setup_pipe(self):
+    def setup_socket(self):
         if sys.platform == "win32":
-            return self.setup_pipe_win()
+            return self.setup_socket_win()
         elif "linux" in sys.platform:
-            return self.setup_pipe_lin()
+            return self.setup_socket_lin()
         else:
             ERROR("Invalid platform for DBI persistent mode")
 
-    def close_pipes_lin(self):
-        if self.pipe_in:
-            self.pipe_in.close()
-        if self.pipe_out:
-            self.pipe_out.close()
+    def close_socket_lin(self):
+        self.sock.close()
+        os.unlink(self.socket_name)
 
-    def close_pipes_win(self):
-        if self.pipe_in:
-            win32file.CloseHandle(self.pipe_in)
+    def close_socket_win(self):
+        return None
 
-    def close_pipes(self):
+    def close_socket(self):
         if sys.platform == "win32":
-            return self.close_pipes_win()
+            return self.close_socket_win()
         elif "linux" in sys.platform:
-            return self.close_pipes_lin()
+            return self.close_socket_lin()
         else:
             ERROR("Invalid platform for DBI persistent mode")
-
-    def connect_pipe_win(self):
-        if self.is_pipe_connected:
-            self.is_pipe_connected = True
-            return
-        INFO(1, None, None, "Waiting for client to connect on pipe %s" % self.pipe_name_in)
-        res = win32pipe.ConnectNamedPipe(self.pipe_in, None)
-        INFO(1, None, None, "Client successfully connected to %s, res = %s" % (self.pipe_name_in, res))
 
     @staticmethod
     def send_command_win(self, command_str):
-        INFO(1, None, None, "Sending %s" % command_str)
-        res = win32file.WriteFile(self.pipe_in, command_str.encode("utf-8"))
-        INFO(1, None, None, "Done sending command over PIPE %s" % self.pipe_in)
-        return res
+        return None
 
     @staticmethod
     def send_command_lin(self, command_str):
-        INFO(1, None, None, "Sending %s into PIPE %s" % (command_str, self.pipe_in))
-        r, w, e = select([], [self.pipe_in], [], 3)
-        if self.pipe_in in w:
-            res = self.pipe_in.write(command_str.encode("utf-8"))
-            INFO(1, None, None, "Done sending command over PIPE %s" % self.pipe_in)
-        else:
-            WARNING(None, "Failed to send into PIPE, timeout. Restarting the target")
-            return 'T'
-        return res
+        INFO(1, None, None, "Sending %s into socket %s" % (command_str, self.socket_name))
+        if not self.conn:
+            ERROR("Wrong recv/send command order, connection is not yet established!")
+        self.conn.send(command_str.encode("utf-8"))
+        INFO(1, None, None, "Done sending command in UDS %s" % self.socket_name)
 
     def send_command(self, command_str):
         if sys.platform == "win32":
@@ -139,25 +106,31 @@ class PipeHandler(object):
 
     @staticmethod
     def recv_command_win(self):
-        INFO(1, None, None, "Reading PIPE %s"  % self.pipe_out)
-        try:
-            res, res_str = win32file.ReadFile(self.pipe_in, 1)
-        except OSError as e:
-            ERROR("Failed to read from named pipe %s! Error %s" % (self.pipe_name_out, e.message))
-        INFO(1, None, None, "Received %s, result code: %d" % (res_str, res))
-        return res_str.decode("utf-8")
+        return
 
     @staticmethod
     def recv_command_lin(self):
-        INFO(1, None, None, "Reading PIPE %s,"  % self.pipe_out)
-        r, w, e = select([self.pipe_out], [], [], 3)
-        if self.pipe_out in r:
-            res = self.pipe_out.read(1)
-            INFO(1, None, None, "Received %s" % res)
-            return res.decode("utf-8")
-        else:
-            WARNING(None, "PIPE timeout encountered, restarting the target")
-            return "T"
+        INFO(1, None, None, "Reading from UDS %s"  % self.socket_name)
+        res = None
+
+        if not self.is_connectected:
+            # Wait for a connection
+            try:
+                self.conn, client_address = self.sock.accept()
+            except IOError:
+                WARNING(None, "Failed to establish connection with target, timeout. Restarting the target")
+                return 'T'
+            self.is_connectected = True
+
+        self.conn.settimeout(self.timeout)
+        try:
+            res = self.conn.recv(1)
+        except IOError:
+            WARNING(None, "Failed to recv data from target, timeout. Restarting the target")
+            return 'T'
+
+        INFO(1, None, None, "Done reading from UDS, result: %s" % res)
+        return res.decode("utf-8")
 
     def recv_command(self):
         if sys.platform == "win32":

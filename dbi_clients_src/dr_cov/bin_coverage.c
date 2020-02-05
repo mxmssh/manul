@@ -51,6 +51,8 @@
 #include <fcntl.h>
 //#include <sys/stat.h>
 //#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 #else
 #include <Windows.h>
@@ -86,8 +88,7 @@ typedef struct _winafl_option_t {
     target_module_t *target_modules;
     char fuzz_module[MAXIMUM_PATH];
     char fuzz_method[MAXIMUM_PATH];
-    char pipe_name_in[MAXIMUM_PATH];
-    char pipe_name_out[MAXIMUM_PATH];
+    char socket_name[MAXIMUM_PATH];
     char shm_name[MAXIMUM_PATH];
     unsigned long fuzz_offset;
     int fuzz_iterations;
@@ -118,8 +119,6 @@ typedef struct _winafl_data_t {
 static winafl_data_t winafl_data;
 
 static int winafl_tls_field;
-
-int pipe_in, pipe_out;
 
 #define ASSERT_WRAP(msg) do { \
    dr_fprintf(winafl_data.log, "%s", msg); \
@@ -355,27 +354,32 @@ WriteCommandToPipe(char cmd)
 
 #else
 
+int socket_fd;
+
 static void
-setup_pipes() {
-    if (options.debug_manul)
-        dr_fprintf(winafl_data.log, "Setting up the out PIPE %s\n",
-                options.pipe_name_out);
-    pipe_out = open(options.pipe_name_out, O_RDONLY);
+setup_socket() {
+    struct sockaddr_un addr;
 
     if (options.debug_manul)
-        dr_fprintf(winafl_data.log, "Setting up the in PIPE %s\n",
-                options.pipe_name_in);
-    pipe_in = open(options.pipe_name_in, O_WRONLY);
+        dr_fprintf(winafl_data.log, "Setting up socket %s\n", options.socket_name);
+
+    if ((socket_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) ASSERT_WRAP("Call to socket(AF_UNIX, ...) failed");
+
+    if (options.debug_manul)
+        dr_fprintf(winafl_data.log, "Connecting to socket %d\n", socket_fd);
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, options.socket_name, sizeof(addr.sun_path)-1);
+    if (connect(socket_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) ASSERT_WRAP("error connecting to socket");
 
     if (options.debug_manul)
         dr_fprintf(winafl_data.log, "Done");
-    if (pipe_in == -1 || pipe_out == -1) ASSERT_WRAP("error connecting to pipe");
 }
 
 static void
-close_pipes() {
-    close(pipe_out);
-    close(pipe_in);
+close_socket() {
+    close(socket_fd);
 }
 
 static void
@@ -393,21 +397,21 @@ setup_shmem() {
 }
 
 static char
-ReadCommandFromPipe() {
+ReadCommandFromUDS() {
     char cmd[1];
     if (options.debug_manul)
-        dr_fprintf(winafl_data.log, "Reading from pipe %s \n", options.pipe_name_out);
-    read(pipe_out, cmd, 1);
+        dr_fprintf(winafl_data.log, "Reading from UDS %d \n", socket_fd);
+    read(socket_fd, cmd, 1);
     if (options.debug_manul)
         dr_fprintf(winafl_data.log, "Result %c \n", cmd[0]);
     return cmd[0];
 }
 
 static void
-WriteCommandToPipe(char cmd) {
+WriteCommandToUDS(char cmd) {
     if (options.debug_manul)
-        dr_fprintf(winafl_data.log, "Writing %c in PIPE %s\n", cmd, options.pipe_name_in);
-    write(pipe_in, &cmd, 1);
+        dr_fprintf(winafl_data.log, "Writing %c in UDS %d\n", cmd, socket_fd);
+    write(socket_fd, &cmd, 1);
     if (options.debug_manul)
         dr_fprintf(winafl_data.log, "Done writing\n");
 }
@@ -423,23 +427,23 @@ pre_loop_start_handler(void *wrapcxt, INOUT void **user_data)
         if (options.debug_manul)
             dr_fprintf(winafl_data.log, "In pre_loop_start_handler\n");
         //let server know we finished a cycle, redundant on first cycle.
-        WriteCommandToPipe('K');
+        WriteCommandToUDS('K');
         if (fuzz_target.iteration == options.fuzz_iterations)
             dr_exit_process(0);
 
         fuzz_target.iteration++;
 
         //let server know we are starting a new cycle
-        WriteCommandToPipe('P');
+        WriteCommandToUDS('P');
 
         //wait for server acknowledgement for cycle start
-        char command = ReadCommandFromPipe();
+        char command = ReadCommandFromUDS();
 
         if (command != 'F') {
             if (command == 'Q')
                 dr_exit_process(0);
             else {
-                char errorMessage[] = "unrecognized command received over pipe: ";
+                char errorMessage[] = "unrecognized command received: ";
                 errorMessage[sizeof(errorMessage)-2] = command;
                 ASSERT_WRAP(errorMessage);
             }
@@ -477,14 +481,14 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
     if(!options.debug_mode) {
         if (options.debug_manul)
             dr_fprintf(winafl_data.log, "In pre_fuzz_handler\n");
-        WriteCommandToPipe('P');
-        command = ReadCommandFromPipe();
+        WriteCommandToUDS('P');
+        command = ReadCommandFromUDS();
 
         if(command != 'F') {
             if(command == 'Q')
                 dr_exit_process(0);
             else
-                ASSERT_WRAP("unrecognized command received over pipe");
+                ASSERT_WRAP("unrecognized command received");
         }
 
     } else {
@@ -523,7 +527,7 @@ post_fuzz_handler(void *wrapcxt, void *user_data)
     if(!options.debug_mode) {
         if (options.debug_manul)
             dr_fprintf(winafl_data.log, "In post_fuzz_handler\n");
-        WriteCommandToPipe('K');
+        WriteCommandToUDS('K');
     } else {
         debug_data.post_handler_called++;
         dr_fprintf(winafl_data.log, "In post_fuzz_handler\n");
@@ -537,7 +541,7 @@ post_fuzz_handler(void *wrapcxt, void *user_data)
     if(fuzz_target.iteration == options.fuzz_iterations) {
         if (options.debug_manul)
             dr_fprintf(winafl_data.log, "Target iteration exceeds limit, exiting the target\n");
-        WriteCommandToPipe('Q');
+        WriteCommandToUDS('Q');
         dr_exit_process(0);
     }
 
@@ -694,14 +698,9 @@ options_init(client_id_t id, int argc, const char *argv[])
             USAGE_CHECK((i + 1) < argc, "missing logdir path");
             strncpy(options.logdir, argv[++i], BUFFER_SIZE_ELEMENTS(options.logdir));
         }
-        else if (strcmp(token, "-pipe_path_in") == 0) {
+        else if (strcmp(token, "-socket_name") == 0) {
             USAGE_CHECK((i + 1) < argc, "missing pipe path IN name");
-            strcat(options.pipe_name_in, argv[i+1]);
-            i++;
-        }
-        else if (strcmp(token, "-pipe_path_out") == 0) {
-            USAGE_CHECK((i + 1) < argc, "missing pipe path OUT name");
-            strcat(options.pipe_name_out, argv[i+1]);
+            strcat(options.socket_name, argv[i+1]);
             i++;
         }
         else if (strcmp(token, "-target_method") == 0) {
@@ -784,7 +783,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
         setup_shmem();
         /* we have to establish connection via PIPEs in persistence mode */
         if (options.persistence_mode > 0)
-            setup_pipes();
+            setup_socket();
     } else {
         winafl_data.afl_area = (unsigned char *)dr_global_alloc(MAP_SIZE);
     }
