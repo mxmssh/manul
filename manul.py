@@ -231,15 +231,16 @@ class Command(object):
         if self.dbi_restart_target:
             if self.process != None and is_alive(self.process.pid):
                 kill_all(self.process.pid)
-                self.dbi_persistence_on.close_socket() # close if it is not a first run
+                self.dbi_persistence_on.close_ipc_object() # close if it is not a first run
 
-            self.dbi_persistence_on.setup_socket()
+            self.dbi_persistence_on.setup_ipc_object()
 
             if sys.platform == "win32":
                 self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 if not is_alive(self.process.pid):
                     ERROR("Failed to start the target error code = %d, output = %s" %
                           (self.process.returncode, self.process.stdout))
+                self.dbi_persistence_on.connect_pipe_win()
             else:
                 self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                                 preexec_fn=os.setsid)
@@ -379,10 +380,10 @@ class Fuzzer:
             self.dbi_tool_params = dbi_setup[2]
             if args.dbi_persistence_mode >= 1:
                 INFO(1, None, None, "Getting PIPE name for fuzzer %d" % fuzzer_id)
-                self.dbi_pipe_handler = dbi_mode.SocketHandler(self.timeout)
-                socket_name = self.dbi_pipe_handler.get_socket_name()
-                INFO(1, None, None, "Socket name in %s" % (socket_name))
-                self.dbi_tool_params += "-socket_name %s" % (socket_name)
+                self.dbi_pipe_handler = dbi_mode.IPCObjectHandler(self.timeout)
+                obj_name = self.dbi_pipe_handler.get_ipc_obj_name()
+                INFO(1, None, None, "IPC object name in %s" % (obj_name))
+                self.dbi_tool_params += "-ipc_obj_name %s" % (obj_name)
 
 
         self.target_ip = None

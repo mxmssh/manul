@@ -88,7 +88,7 @@ typedef struct _winafl_option_t {
     target_module_t *target_modules;
     char fuzz_module[MAXIMUM_PATH];
     char fuzz_method[MAXIMUM_PATH];
-    char socket_name[MAXIMUM_PATH];
+    char ipc_obj_name[MAXIMUM_PATH];
     char shm_name[MAXIMUM_PATH];
     unsigned long fuzz_offset;
     int fuzz_iterations;
@@ -361,7 +361,7 @@ setup_socket() {
     struct sockaddr_un addr;
 
     if (options.debug_manul)
-        dr_fprintf(winafl_data.log, "Setting up socket %s\n", options.socket_name);
+        dr_fprintf(winafl_data.log, "Setting up socket %s\n", options.ipc_obj_name);
 
     if ((socket_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) ASSERT_WRAP("Call to socket(AF_UNIX, ...) failed");
 
@@ -370,7 +370,7 @@ setup_socket() {
 
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, options.socket_name, sizeof(addr.sun_path)-1);
+    strncpy(addr.sun_path, options.ipc_obj_name, sizeof(addr.sun_path)-1);
     if (connect(socket_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) ASSERT_WRAP("error connecting to socket");
 
     if (options.debug_manul)
@@ -698,9 +698,9 @@ options_init(client_id_t id, int argc, const char *argv[])
             USAGE_CHECK((i + 1) < argc, "missing logdir path");
             strncpy(options.logdir, argv[++i], BUFFER_SIZE_ELEMENTS(options.logdir));
         }
-        else if (strcmp(token, "-socket_name") == 0) {
+        else if (strcmp(token, "-ipc_obj_name") == 0) {
             USAGE_CHECK((i + 1) < argc, "missing pipe path IN name");
-            strcat(options.socket_name, argv[i+1]);
+            strcat(options.ipc_obj_name, argv[i+1]);
             i++;
         }
         else if (strcmp(token, "-target_method") == 0) {
