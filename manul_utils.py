@@ -134,9 +134,15 @@ def get_list_of_idle_processes(timeout):
 def is_alive(pid):
     if psutil.pid_exists(pid):
         # alive but zombie ?
-        proc = psutil.Process(pid)
-        if proc.status() == psutil.STATUS_ZOMBIE:
-            kill_all(pid)  # avoid Zombies in our environment
+        status = None
+        try:
+            proc = psutil.Process(pid)
+            status = proc.status()
+        except psutil.NoSuchProcess as exc:
+            return False # already dead
+        if status and status == psutil.STATUS_ZOMBIE:
+            printing.WARNING(None, "The process is alive but Zombie, killing it")
+            kill_all(pid) # avoid Zombies in our environment
             return False
         return True
     else:
@@ -152,8 +158,11 @@ def kill_process(p):
         pass
 
 def kill_all(pid):
-    parent = psutil.Process(pid)
-    children = parent.children(recursive=True)
+    try:
+        parent = psutil.Process(pid)
+        children = parent.children(recursive=True)
+    except psutil.NoSuchProcess as exc:
+        return
     for p in children:
         kill_process(p)
     kill_process(parent)

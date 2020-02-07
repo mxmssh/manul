@@ -22,7 +22,7 @@ import datetime
 from datetime import timedelta
 
 DEBUG_PRINT = False
-MANUL_VERSION = "0.3"
+MANUL_VERSION = "0.4"
 
 #TODO: colors doesn't work in Windows
 def print_logo():

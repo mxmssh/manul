@@ -31,6 +31,7 @@ import random
 import afl_fuzz
 import zlib
 import importlib
+import dbi_mode
 
 PY3 = sys.version_info[0] == 3
 
@@ -106,12 +107,14 @@ class ForkServer(object):
 
 
 class Command(object):
-    def __init__(self, target_ip, target_port, target_protocol, timeout, fokserver_on):
+    def __init__(self, target_ip, target_port, target_protocol, timeout, fokserver_on, dbi_persistence_handler,
+                 dbi_persistence_mode):
         self.process = None
         self.forkserver_on = fokserver_on
         self.forkserver_is_up = False
         self.forkserver = None
         self.returncode = 0
+
         if self.forkserver_on:
             self.forkserver = ForkServer(timeout)
 
@@ -124,6 +127,9 @@ class Command(object):
             self.target_protocol = target_protocol
         self.net_class = None
 
+        self.dbi_persistence_on = dbi_persistence_handler
+        self.dbi_persistence_mode = dbi_persistence_mode
+        self.dbi_restart_target = True
 
     def init_target_server(self, cmd):
         global net_process_is_up
@@ -178,12 +184,118 @@ class Command(object):
         return status
 
 
+    def handle_dbi_pre(self):
+        res = self.dbi_persistence_on.recv_command()
+        if res == 'P':
+            # our target successfully reached the target function and is waiting for the next command
+            INFO(1, None, None, "Target successfully reached the target function (pre_handler)")
+            send_res = self.dbi_persistence_on.send_command('F') # notify the target that we received command
+        elif res == 'K' and self.dbi_persistence_mode == 2:
+            INFO(1, None, None, "Target successfully reached the target function (pre_loop_handler) for the first time")
+            send_res = self.dbi_persistence_on.send_command('P') # notify the target that we received command
+        elif res == 'Q':
+            INFO(1, None, None, "Target notified about exit (after post_handler in target)")
+            self.dbi_restart_target = True
+            return True
+        elif res == 'T': # TODO can it happen when we are sending command ?
+            self.dbi_restart_target = True
+            return True
+        else:
+            ERROR("Received wrong command from the instrumentation library (pre_handler): %s" % res)
+
+        return False
+
+
+    def handle_dbi_post(self):
+        res = self.dbi_persistence_on.recv_command()
+        if res == 'K':
+            INFO(1, None, None, "Target successfully exited from the target function (post_handler)")
+        elif res == 'T':
+            WARNING(None, "The target failed to answer within given timeframe, restarting")
+            self.dbi_restart_target = True
+            return 0
+        elif res == "":
+            WARNING(None, "No answer from the target, restarting.")
+            # the target should be restarted after this (it can be a crash)
+            self.dbi_restart_target = True
+            return 1
+        elif res == "C": # target sent crash signal, handling and restarting
+            self.dbi_restart_target = True
+            return 2
+        else:
+            ERROR("Received wrong command from the instrumentation library (post_handler)")
+        return 0
+
+
+    def exec_command_dbi_persistence(self, cmd):
+        if self.dbi_restart_target:
+            if self.process != None and is_alive(self.process.pid):
+                INFO(1, None, None, "Killing the target")
+                kill_all(self.process.pid)
+            self.dbi_persistence_on.close_ipc_object() # close if it is not a first run
+
+            self.dbi_persistence_on.setup_ipc_object()
+
+            if sys.platform == "win32":
+                self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if not is_alive(self.process.pid):
+                    ERROR("Failed to start the target error code = %d, output = %s" %
+                          (self.process.returncode, self.process.stdout))
+                self.dbi_persistence_on.connect_pipe_win()
+            else:
+                self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                                preexec_fn=os.setsid)
+
+            if not is_alive(self.process.pid):
+                ERROR("Failed to start the target error code = %d, output = %s" %
+                      (self.process.returncode, self.process.stdout))
+
+            INFO(1, None, None, "Target successfully started, waiting for result")
+
+            self.dbi_restart_target = False
+
+        if self.handle_dbi_pre():
+            # It means that the target issued quit command or we failed to send command, we should handle it properly
+            return 0, ""
+
+        if self.dbi_persistence_mode == 1:
+            res = self.handle_dbi_post()
+            if res == 1:
+                self.handle_return(1) # we use custom timeout of 5 seconds here to check if our target is still alive
+                return self.process.returncode, self.err
+            elif res == 2: # TODO: it is only for windows, make it consistent
+                return EXCEPTION_FIRST_CRITICAL_CODE, "Segmentation fault"
+        else:
+            ERROR("Persistence mode not yet supported")
+
+        return 0, ""
+
+
+    def handle_return(self, default_timeout):
+        INFO(1, None, None, "Requesting target state")
+        if PY3:
+            try:
+                self.out, self.err = self.process.communicate(timeout=default_timeout)
+            except subprocess.TimeoutExpired:
+                INFO(1, None, None, "Timeout occured")
+                return False
+        else:
+            self.out, self.err = self.process.communicate() # watchdog will handle timeout if needed in PY2
+        INFO(1, None, None, "State %s %s" % (self.out, self.err))
+        return True
+
+
     def exec_command(self, cmd):
         if self.forkserver_on:
-            status = self.exec_command_forkserver(cmd)
-            self.returncode = status
+            self.returncode = self.exec_command_forkserver(cmd)
             self.err = ""
             return
+
+        if self.dbi_persistence_on:
+            INFO(1, None, None, "Persistence mode")
+            self.returncode, self.err = self.exec_command_dbi_persistence(cmd)
+            return
+
 
         if sys.platform == "win32":
             self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -191,7 +303,9 @@ class Command(object):
             self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                             preexec_fn=os.setsid)
 
-        INFO(1, None, None, "Target started, waiting for return")
+        INFO(1, None, None, "Target successfully started, waiting for result")
+        self.handle_return(self.timeout)
+
 
         if PY3:
             try:
@@ -209,7 +323,7 @@ class Command(object):
         if isinstance(self.err, (bytes, bytearray)):
             self.err = self.err.decode("utf-8", 'replace')
 
-        if self.forkserver_on:
+        if self.forkserver_on or self.dbi_persistence_on:
             return self.returncode, self.err
         return self.process.returncode, self.err
 
@@ -218,6 +332,7 @@ class Fuzzer:
     def __init__(self, list_of_files, fuzzer_id, virgin_bits_global, args, stats_array, restore_session, crash_bits,
                  dbi_setup):
         # local fuzzer config
+        INFO(1, None, None, "Performing intialization of fuzzer %d" % fuzzer_id)
         global SHM_SIZE, net_sleep_between_cases
         self.SHM_SIZE = SHM_SIZE
         self.CALIBRATIONS_COUNT = 7
@@ -225,6 +340,7 @@ class Fuzzer:
         self.dbi = args.dbi
         self.afl_fuzzer = dict()
         self.token_dict = list()
+        self.timeout = args.timeout
         self.disable_volatile_bytes = args.disable_volatile_bytes
         net_sleep_between_cases = float(args.net_sleep_between_cases)
 
@@ -268,10 +384,19 @@ class Fuzzer:
             self.user_defined_signals = args.user_signals.split(",")
         else:
             self.user_defined_signals = None
+
+        self.dbi_pipe_handler = None
         if dbi_setup:
             self.dbi_engine_path = dbi_setup[0]
             self.dbi_tool_path = dbi_setup[1]
             self.dbi_tool_params = dbi_setup[2]
+            if args.dbi_persistence_mode >= 1:
+                INFO(1, None, None, "Getting PIPE name for fuzzer %d" % fuzzer_id)
+                self.dbi_pipe_handler = dbi_mode.IPCObjectHandler(self.timeout)
+                obj_name = self.dbi_pipe_handler.get_ipc_obj_name()
+                INFO(1, None, None, "IPC object name in %s" % (obj_name))
+                self.dbi_tool_params += "-ipc_obj_name %s" % (obj_name)
+
 
         self.target_ip = None
         self.target_port = None
@@ -289,7 +414,7 @@ class Fuzzer:
         self.global_map = virgin_bits_global
         self.crash_bits = crash_bits  # happens not too often
 
-        self.timeout = args.timeout
+
         self.stats_array = stats_array
         self.restore = restore_session
 
@@ -393,7 +518,9 @@ class Fuzzer:
             self.net_cmd = self.prepare_cmd_to_run(None, True)
 
         self.forkserver_on = args.forkserver_on
-        self.command = Command(self.target_ip, self.target_port, self.target_protocol, self.timeout, args.forkserver_on)
+        INFO(1, None, None, "Initalization is done for %d" % fuzzer_id)
+        self.command = Command(self.target_ip, self.target_port, self.target_protocol, self.timeout, args.forkserver_on,
+                               self.dbi_pipe_handler, args.dbi_persistence_mode)
 
 
     def sync_bitmap(self):
@@ -985,8 +1112,6 @@ def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_s
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     printing.DEBUG_PRINT = args.debug  # FYI, multiprocessing causes global vars to be reinitialized.
     INFO(0, None, None, "Starting fuzzer %d" % i)
-    if args.dbi:
-        args.timeout *= 30  # DBI introduce ~30x overhead
 
     fuzzer_instance = Fuzzer(files_list, i, virgin_bits, args, stats_array, restore_session, crash_bits, dbi_setup)
     fuzzer_instance.run()  # never return
@@ -1021,7 +1146,7 @@ def which(target_binary):
 def check_binary(target_binary):
     binary_path = which(target_binary)
     if binary_path is None:
-        ERROR("Unable to find binary %s required to run Manul" % target_binary)
+        ERROR("Unable to find binary %s (required)" % target_binary)
 
 
 def get_available_id_for_backup(dir_name):
@@ -1046,15 +1171,34 @@ def configure_dbi(args, target_binary, is_debug):
     check_binary(dbi_tool_path)
 
     dbi_tool_params = ""
+    dbi_pipe_handler = None
     if args.dbi == "dynamorio":
+        if args.dbi_persistence_mode >= 1:
+            if args.dbi_target_module:
+                dbi_tool_params += "-target_module %s " % args.dbi_target_module
+
+            if args.dbi_thread_coverage:
+                dbi_tool_params += "-thread_coverage"
+
+            if args.dbi_target_method:
+                dbi_tool_params += "-target_method %s " % args.dbi_target_method
+            elif args.dbi_target_offset:
+                dbi_tool_params += "-target_offset %s " % args.dbi_target_offset
+            else:
+                ERROR("Please specify target method or target offset in manul.config")
+
+            dbi_tool_params += "-fuzz_iterations %d " % args.dbi_fuzz_iterations
+            dbi_tool_params += "-persistence_mode %d " % args.dbi_persistence_mode
+
         dbi_tool_params += "-coverage_module %s " % ntpath.basename(target_binary)
+
         if dbi_tool_libs is not None:
             for target_lib in dbi_tool_libs.split(","):
                 if target_lib == "":
                     continue
                 dbi_tool_params += "-coverage_module %s " % target_lib
         if is_debug:
-            dbi_tool_params += "-debug"
+            dbi_tool_params += "-debug_manul "
     elif args.dbi == "pin":
         if sys.platform == "win32":
             ERROR("Intel PIN DBI engine is not supported on Windows")
@@ -1068,7 +1212,7 @@ def configure_dbi(args, target_binary, is_debug):
     else:
         ERROR("Unknown dbi engine/option specified. Intel PIN or DynamoRIO are only supported")
 
-    dbi_setup = (dbi_engine_path, dbi_tool_path, dbi_tool_params)
+    dbi_setup = (dbi_engine_path, dbi_tool_path, dbi_tool_params, dbi_pipe_handler)
     return dbi_setup
 
 def split_files_by_count(files_list, threads_count):
@@ -1178,13 +1322,21 @@ def parse_args():
                         help = "Path to config file with additional options (see manul.config)")
     parser.add_argument('-r', default=False, action='store_true', dest = "restore", help = "Restore previous session")
 
-    # this options should be specified through config file and hidden
-    parser.add_argument('--deterministic_seed', default=False, action='store_true', help = argparse.SUPPRESS)
+    # these options should be specified through config file and hidden
+    parser.add_argument('--determinstic_seed', default=False, action='store_true', help = argparse.SUPPRESS)
     parser.add_argument('--print_per_thread', default=False, action='store_true', dest="threads_info", help = argparse.SUPPRESS)
+
     parser.add_argument('--dbi', default = None, help = argparse.SUPPRESS)
     parser.add_argument('--dbi_root', help = argparse.SUPPRESS)
     parser.add_argument('--dbi_client_root', help = argparse.SUPPRESS)
     parser.add_argument('--dbi_client_libs', help = argparse.SUPPRESS)
+    parser.add_argument("--dbi_persistence_mode", default = 0, type=int, help = argparse.SUPPRESS)
+    parser.add_argument("--dbi_target_method", default = None, help = argparse.SUPPRESS)
+    parser.add_argument("--dbi_target_offset", default = None, help= argparse.SUPPRESS)
+    parser.add_argument("--dbi_target_module", default = None, help = argparse.SUPPRESS)
+    parser.add_argument("--dbi_fuzz_iterations", default = 5000, type=int, help = argparse.SUPPRESS)
+    parser.add_argument("--dbi_thread_coverage", default = False, action = 'store_true', help = argparse.SUPPRESS)
+
     parser.add_argument('--timeout', default=10, type=int, help = argparse.SUPPRESS)
     parser.add_argument('--net_config_master', help = argparse.SUPPRESS)
     parser.add_argument('--net_config_slave', help = argparse.SUPPRESS)
@@ -1206,6 +1358,7 @@ def parse_args():
     parser.add_argument("--disable_volatile_bytes", default = None, action = 'store_true', help = argparse.SUPPRESS)
     parser.add_argument("--stop_after_nseconds", default = 0.0, type=int, help = argparse.SUPPRESS)
     parser.add_argument("--forkserver_on", default = False, action = 'store_true', help = argparse.SUPPRESS)
+
 
     parser.add_argument('target_binary', nargs='*', help="The target binary and options to be executed (quotes needed e.g. \"target -png @@\")")
 
@@ -1243,8 +1396,11 @@ def parse_args():
     if args.forkserver_on and not sys.platform.startswith('linux'):
         INFO(0, None, None, "Forkserver is not supported on this platform, switching to classic mode")
         args.forkserver_on = False
-    if args.simple_mode:
-        args.forkserver_on = False  # we don't have forkserver in simple mode
+
+    if args.simple_mode or args.dbi:
+        args.forkserver_on = False # we don't have forkserver for simple or DBI modes
+
+    #TODO: check that DBI params are correctly set
 
     INIT_WAIT_TIME = float(args.init_wait)
 
@@ -1372,5 +1528,6 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         INFO(0, None, None, "Stopping all fuzzers and threads")
         kill_all(os.getpid())
+        # TODO: ideally, if we have UDS opened we should clean them with unlink() function here.
         INFO(0, None, None, "Stopped, exiting")
         sys.exit()
