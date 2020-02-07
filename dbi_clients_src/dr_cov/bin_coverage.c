@@ -310,12 +310,12 @@ setup_shmem() {
 static HANDLE pipe;
 
 static void
-setup_pipes() {
+setup_object() {
     if (options.debug_manul)
         dr_fprintf(winafl_data.log, "Setting up the PIPE %s\n",
-                options.pipe_name_in);
+                   options.ipc_obj_name);
     pipe = CreateFile(
-         options.pipe_name_in,   // pipe name in and out are the same
+         options.ipc_obj_name,   // pipe name in and out are the same
          GENERIC_READ |  // read and write access
          GENERIC_WRITE,
          0,              // no sharing
@@ -329,7 +329,7 @@ setup_pipes() {
 }
 
 static char
-ReadCommandFromPipe()
+ReadCommandFromObject()
 {
     if (options.debug_manul)
         dr_fprintf(winafl_data.log, "Reading from PIPE\n");
@@ -342,7 +342,7 @@ ReadCommandFromPipe()
 }
 
 static void
-WriteCommandToPipe(char cmd)
+WriteCommandToObject(char cmd)
 {
     if (options.debug_manul)
         dr_fprintf(winafl_data.log, "Writing %c in PIPE\n", cmd);
@@ -352,12 +352,37 @@ WriteCommandToPipe(char cmd)
         dr_fprintf(winafl_data.log, "Done\n");
 }
 
+static bool
+onexception(void *drcontext, dr_exception_t *excpt) {
+    DWORD exception_code = excpt->record->ExceptionCode;
+
+    if(options.debug_mode)
+        dr_fprintf(winafl_data.log, "Exception caught: %x\n", exception_code);
+
+    if((exception_code == EXCEPTION_ACCESS_VIOLATION) ||
+        (exception_code == EXCEPTION_ILLEGAL_INSTRUCTION) ||
+        (exception_code == EXCEPTION_PRIV_INSTRUCTION) ||
+        (exception_code == EXCEPTION_INT_DIVIDE_BY_ZERO) ||
+        (exception_code == STATUS_HEAP_CORRUPTION) ||
+        (exception_code == EXCEPTION_STACK_OVERFLOW) ||
+        (exception_code == STATUS_STACK_BUFFER_OVERRUN) ||
+        (exception_code == STATUS_FATAL_APP_EXIT)) {
+        if(options.debug_mode) {
+            dr_fprintf(winafl_data.log, "crashed\n");
+        } else {
+            WriteCommandToObject('C');
+        }
+        dr_exit_process(1);
+    }
+    return true;
+}
+
 #else
 
 int socket_fd;
 
 static void
-setup_socket() {
+setup_object() {
     struct sockaddr_un addr;
 
     if (options.debug_manul)
@@ -397,7 +422,7 @@ setup_shmem() {
 }
 
 static char
-ReadCommandFromUDS() {
+ReadCommandFromObject() {
     char cmd[1];
     if (options.debug_manul)
         dr_fprintf(winafl_data.log, "Reading from UDS %d \n", socket_fd);
@@ -408,7 +433,7 @@ ReadCommandFromUDS() {
 }
 
 static void
-WriteCommandToUDS(char cmd) {
+WriteCommandToObject(char cmd) {
     if (options.debug_manul)
         dr_fprintf(winafl_data.log, "Writing %c in UDS %d\n", cmd, socket_fd);
     write(socket_fd, &cmd, 1);
@@ -427,25 +452,24 @@ pre_loop_start_handler(void *wrapcxt, INOUT void **user_data)
         if (options.debug_manul)
             dr_fprintf(winafl_data.log, "In pre_loop_start_handler\n");
         //let server know we finished a cycle, redundant on first cycle.
-        WriteCommandToUDS('K');
+        WriteCommandToObject('K');
         if (fuzz_target.iteration == options.fuzz_iterations)
             dr_exit_process(0);
 
         fuzz_target.iteration++;
 
         //let server know we are starting a new cycle
-        WriteCommandToUDS('P');
+        WriteCommandToObject('P');
 
         //wait for server acknowledgement for cycle start
-        char command = ReadCommandFromUDS();
+        char command = ReadCommandFromObject();
 
         if (command != 'F') {
             if (command == 'Q')
                 dr_exit_process(0);
             else {
-                char errorMessage[] = "unrecognized command received: ";
-                errorMessage[sizeof(errorMessage)-2] = command;
-                ASSERT_WRAP(errorMessage);
+                dr_fprintf(winafl_data.log, "unrecognized command received over pipe");
+                dr_exit_process(1);
             }
         }
     }
@@ -481,14 +505,16 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
     if(!options.debug_mode) {
         if (options.debug_manul)
             dr_fprintf(winafl_data.log, "In pre_fuzz_handler\n");
-        WriteCommandToUDS('P');
-        command = ReadCommandFromUDS();
+        WriteCommandToObject('P');
+        command = ReadCommandFromObject();
 
         if(command != 'F') {
             if(command == 'Q')
                 dr_exit_process(0);
-            else
-                ASSERT_WRAP("unrecognized command received");
+            else {
+                dr_fprintf(winafl_data.log, "unrecognized command received over pipe");
+                dr_exit_process(1);
+            }
         }
 
     } else {
@@ -527,7 +553,7 @@ post_fuzz_handler(void *wrapcxt, void *user_data)
     if(!options.debug_mode) {
         if (options.debug_manul)
             dr_fprintf(winafl_data.log, "In post_fuzz_handler\n");
-        WriteCommandToUDS('K');
+        WriteCommandToObject('K');
     } else {
         debug_data.post_handler_called++;
         dr_fprintf(winafl_data.log, "In post_fuzz_handler\n");
@@ -541,7 +567,7 @@ post_fuzz_handler(void *wrapcxt, void *user_data)
     if(fuzz_target.iteration == options.fuzz_iterations) {
         if (options.debug_manul)
             dr_fprintf(winafl_data.log, "Target iteration exceeds limit, exiting the target\n");
-        WriteCommandToUDS('Q');
+        WriteCommandToObject('Q');
         dr_exit_process(0);
     }
 
@@ -766,7 +792,9 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     event_init();
 
     dr_register_exit_event(event_exit);
-
+#ifdef _WIN32
+    drmgr_register_exception_event(onexception);
+#endif
     drmgr_register_bb_instrumentation_event(NULL, instrument_edge_coverage, NULL);
 
     drmgr_register_module_load_event(event_module_load);
@@ -783,7 +811,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
         setup_shmem();
         /* we have to establish connection via PIPEs in persistence mode */
         if (options.persistence_mode > 0)
-            setup_socket();
+            setup_object();
     } else {
         winafl_data.afl_area = (unsigned char *)dr_global_alloc(MAP_SIZE);
     }

@@ -66,7 +66,7 @@ class ForkServer(object):
             res = self.r_fd.read(4)
             if len(res) != 4:
                 ERROR("Failed to init forkserver")
-            INFO(0, bcolors.OKGREEN, None, "Forkserver init completed sucessfully")
+            INFO(0, bcolors.OKGREEN, None, "Forkserver init completed successfully")
         else:
 
             # This is the child process
@@ -187,24 +187,21 @@ class Command(object):
     def handle_dbi_pre(self):
         res = self.dbi_persistence_on.recv_command()
         if res == 'P':
-            # our target sucessfully reached the target function and is waiting for the next command
-            INFO(1, None, None, "Target sucessfully reached the target function (pre_handler)")
+            # our target successfully reached the target function and is waiting for the next command
+            INFO(1, None, None, "Target successfully reached the target function (pre_handler)")
             send_res = self.dbi_persistence_on.send_command('F') # notify the target that we received command
-            if send_res == 'T': # TODO can it happen when we are sending command ?
-                self.dbi_restart_target = True
-                return True
         elif res == 'K' and self.dbi_persistence_mode == 2:
-            INFO(1, None, None, "Target sucessfully reached the target function (pre_loop_handler) for the first time")
+            INFO(1, None, None, "Target successfully reached the target function (pre_loop_handler) for the first time")
             send_res = self.dbi_persistence_on.send_command('P') # notify the target that we received command
-            if send_res == 'T': # yes, it can happen when we are sending command too
-                self.dbi_restart_target = True
-                return True
         elif res == 'Q':
             INFO(1, None, None, "Target notified about exit (after post_handler in target)")
             self.dbi_restart_target = True
             return True
+        elif res == 'T': # TODO can it happen when we are sending command ?
+            self.dbi_restart_target = True
+            return True
         else:
-            ERROR("Received wrong command from the instrumentation library (pre_handler)")
+            ERROR("Received wrong command from the instrumentation library (pre_handler): %s" % res)
 
         return False
 
@@ -212,26 +209,30 @@ class Command(object):
     def handle_dbi_post(self):
         res = self.dbi_persistence_on.recv_command()
         if res == 'K':
-            INFO(1, None, None, "Target sucessfully exited from the target function (post_handler)")
+            INFO(1, None, None, "Target successfully exited from the target function (post_handler)")
         elif res == 'T':
             WARNING(None, "The target failed to answer within given timeframe, restarting")
             self.dbi_restart_target = True
-            #return True
+            return 0
         elif res == "":
             WARNING(None, "No answer from the target, restarting.")
             # the target should be restarted after this (it can be a crash)
             self.dbi_restart_target = True
-            return True
+            return 1
+        elif res == "C": # target sent crash signal, handling and restarting
+            self.dbi_restart_target = True
+            return 2
         else:
             ERROR("Received wrong command from the instrumentation library (post_handler)")
-        return False
+        return 0
 
 
     def exec_command_dbi_persistence(self, cmd):
         if self.dbi_restart_target:
             if self.process != None and is_alive(self.process.pid):
+                INFO(1, None, None, "Killing the target")
                 kill_all(self.process.pid)
-                self.dbi_persistence_on.close_ipc_object() # close if it is not a first run
+            self.dbi_persistence_on.close_ipc_object() # close if it is not a first run
 
             self.dbi_persistence_on.setup_ipc_object()
 
@@ -249,7 +250,7 @@ class Command(object):
                 ERROR("Failed to start the target error code = %d, output = %s" %
                       (self.process.returncode, self.process.stdout))
 
-            INFO(1, None, None, "Target sucessfully started, waiting for result")
+            INFO(1, None, None, "Target successfully started, waiting for result")
 
             self.dbi_restart_target = False
 
@@ -258,11 +259,12 @@ class Command(object):
             return 0, ""
 
         if self.dbi_persistence_mode == 1:
-            if self.handle_dbi_post():
-                if not self.handle_return(5): # we use custom timeout of 5 seconds here to check if our target is still alive
-                    # the target can answer on communicate but be still in waiting state, we need to kill it manually
-                    kill_all(self.process.pid)
+            res = self.handle_dbi_post()
+            if res == 1:
+                self.handle_return(1) # we use custom timeout of 5 seconds here to check if our target is still alive
                 return self.process.returncode, self.err
+            elif res == 2: # TODO: it is only for windows, make it consistent
+                return EXCEPTION_FIRST_CRITICAL_CODE, "Segmentation fault"
         else:
             ERROR("Persistence mode not yet supported")
 
@@ -270,15 +272,16 @@ class Command(object):
 
 
     def handle_return(self, default_timeout):
+        INFO(1, None, None, "Requesting target state")
         if PY3:
             try:
-                self.out, self.err = self.process.communicate(default_timeout)
+                self.out, self.err = self.process.communicate(timeout=default_timeout)
             except subprocess.TimeoutExpired:
                 INFO(1, None, None, "Timeout occured")
-                kill_all(self.process.pid)
                 return False
         else:
             self.out, self.err = self.process.communicate() # watchdog will handle timeout if needed in PY2
+        INFO(1, None, None, "State %s %s" % (self.out, self.err))
         return True
 
 
@@ -300,7 +303,7 @@ class Command(object):
             self.process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                             preexec_fn=os.setsid)
 
-        INFO(1, None, None, "Target sucessfully started, waiting for result")
+        INFO(1, None, None, "Target successfully started, waiting for result")
         self.handle_return(self.timeout)
 
 
@@ -967,7 +970,7 @@ class Fuzzer:
         last_stats_saved_time = 0
 
         if self.restore:
-            INFO(0, bcolors.BOLD + bcolors.OKBLUE, self.log_file, "Session sucessfully restored")
+            INFO(0, bcolors.BOLD + bcolors.OKBLUE, self.log_file, "Session successfully restored")
 
         start_time = timer()
 
@@ -1057,7 +1060,7 @@ class Fuzzer:
                         if self.calibrate_test_case(full_output_file_path) == 2:
                             self.fuzzer_stats.stats['new_paths'] += 1
                             self.fuzzer_stats.stats['last_path_time'] = time.time()
-                            INFO(1, None, self.log_file, "Calibration finished sucessfully. Saving new finding")
+                            INFO(1, None, self.log_file, "Calibration finished successfully. Saving new finding")
 
                             new_coverage_file_name = self.generate_new_name(file_name)
                             INFO(1, None, self.log_file, "Copying %s to %s" % (full_output_file_path,
@@ -1463,7 +1466,7 @@ if __name__ == "__main__":
         all_threads_stats.append(stats_array)
         all_threads_handles.append(t)
 
-    INFO(0, None, None, "%d fuzzer instances sucessfully launched" % args.nfuzzers)
+    INFO(0, None, None, "%d fuzzer instances successfully launched" % args.nfuzzers)
 
     sync_t = None
     if (args.net_config_slave is not None or args.net_config_master is not None) and not args.simple_mode:

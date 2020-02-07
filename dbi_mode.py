@@ -3,7 +3,7 @@ import os
 import random
 import socket
 if sys.platform == "win32":
-    import win32pipe, win32file, pywintypes
+    import win32pipe, win32file, pywintypes, winerror, win32event
 from select import select
 
 COMMAND_CYCLE_FINISH = 'K'
@@ -29,9 +29,13 @@ def gen_ipc_obj_name():
 class IPCObjectHandler(object):
     def __init__(self, timeout):
         self.ipc_obj_name = gen_ipc_obj_name()
-        self.pipe_in = None
-        self.sock = None
-        self.conn = None
+        if sys.platform == "win32":
+            self.overlap_read = pywintypes.OVERLAPPED()
+            self.pipe_in = None
+            self.overlap_read.hEvent = None
+        else:
+            self.sock = None
+            self.conn = None
         self.is_connected = False
         self.timeout = timeout
 
@@ -39,12 +43,15 @@ class IPCObjectHandler(object):
         return self.ipc_obj_name
 
     def setup_pipe_win(self):
-        INFO(1, None, None, "Opening PIPE %s" % self.pipe_name_in)
+        INFO(1, None, None, "Opening PIPE %s" % self.ipc_obj_name)
+        self.overlap_read.hEvent = win32event.CreateEvent(None, 0, 0, None)
+        if self.overlap_read.hEvent == 0:
+            ERROR("Failed to initialize named pipe")
         try:
             self.pipe_in = win32pipe.CreateNamedPipe(self.ipc_obj_name,
-                                                     win32pipe.PIPE_ACCESS_DUPLEX,
-                                                     win32pipe.PIPE_TYPE_MESSAGE | win32pipe.PIPE_READMODE_MESSAGE | win32pipe.PIPE_WAIT,
-                                                     1, 65536, 65536,
+                                                     win32pipe.PIPE_ACCESS_DUPLEX | win32file.FILE_FLAG_OVERLAPPED,
+                                                     0,
+                                                     1, 512, 512,
                                                      0,
                                                      None)
         except OSError as e:
@@ -84,7 +91,10 @@ class IPCObjectHandler(object):
 
     def close_pipe_win(self):
         if self.pipe_in:
+            win32pipe.DisconnectNamedPipe(self.pipe_in)
             win32file.CloseHandle(self.pipe_in)
+            win32file.CloseHandle(self.overlap_read.hEvent)
+
 
     def close_ipc_object(self):
         if sys.platform == "win32":
@@ -98,14 +108,18 @@ class IPCObjectHandler(object):
         if self.is_connected:
             self.is_connected = True
             return
-        INFO(1, None, None, "Waiting for client to connect on pipe %s" % self.pipe_name_in)
-        res = win32pipe.ConnectNamedPipe(self.pipe_in, None)
-        INFO(1, None, None, "Client successfully connected to %s, res = %s" % (self.pipe_name_in, res))
+        INFO(1, None, None, "Waiting for client to connect on pipe %s" % self.ipc_obj_name)
+        res = win32pipe.ConnectNamedPipe(self.pipe_in, self.overlap_read)
+        if res == winerror.ERROR_IO_PENDING:
+            INFO(1, None, None, "Client is not ready, waiting")
+            win32event.WaitForSingleObject(self.overlap_read.hEvent, win32event.INFINITE)
+
+        INFO(1, None, None, "Client successfully connected to %s, res = %s" % (self.ipc_obj_name, res))
 
     @staticmethod
     def send_command_win(self, command_str):
         INFO(1, None, None, "Sending %s" % command_str)
-        res = win32file.WriteFile(self.pipe_in, command_str.encode("utf-8"))
+        res = win32file.WriteFile(self.pipe_in, command_str.encode("utf-8"), self.overlap_read)
         INFO(1, None, None, "Done sending command over PIPE %s" % self.pipe_in)
         return res
 
@@ -127,13 +141,25 @@ class IPCObjectHandler(object):
 
     @staticmethod
     def recv_command_win(self):
-        INFO(1, None, None, "Reading PIPE %s"  % self.pipe_out)
-        try:
-            res, res_str = win32file.ReadFile(self.pipe_in, 1)
-        except OSError as e:
-            ERROR("Failed to read from named pipe %s! Error %s" % (self.pipe_name_in, e.message))
+        INFO(1, None, None, "Reading PIPE %s"  % self.ipc_obj_name)
+        #using winAFL implementation for ReadFile with timeout
+        res, res_str = win32file.ReadFile(self.pipe_in, 1, self.overlap_read)
+        if res == winerror.ERROR_IO_PENDING:
+            rc = win32event.WaitForSingleObject(self.overlap_read.hEvent, self.timeout*100)
+            if rc != win32event.WAIT_OBJECT_0:
+                # winAFL: took longer than specified timeout or other error - cancel read
+                win32file.CancelIo(self.pipe_in);
+                # wait for cancelation to finish properly.
+                win32event.WaitForSingleObject(self.overlap_read.hEvent, win32event.INFINITE);
+                return "T"
+        res_str = bytes(res_str)
         INFO(1, None, None, "Received %s, result code: %d" % (res_str, res))
-        return res_str.decode("utf-8")
+        try: # TODO: it would be probably better to use OVERLAPPED API functions here
+            res_str = res_str.decode("utf-8")
+        except:
+            # it means that the target failed to answer us for some reason
+            res_str = ""
+        return res_str
 
     @staticmethod
     def recv_command_lin(self):
