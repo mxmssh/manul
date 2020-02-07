@@ -86,8 +86,9 @@ class IPCObjectHandler(object):
             ERROR("Invalid platform for DBI persistent mode")
 
     def close_socket_lin(self):
-        self.sock.close()
-        os.unlink(self.ipc_obj_name)
+        if self.sock:
+            self.sock.close()
+            os.unlink(self.ipc_obj_name)
 
     def close_pipe_win(self):
         if self.pipe_in:
