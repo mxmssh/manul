@@ -137,9 +137,9 @@ def print_per_thread(all_threads_stats, bytes_cov, time_elapsed, active_threads_
         stability = 0.0
         for j, element in enumerate(thread_stat):
             if PY3:
-                (k, v) = list(stats.stats.items())[j] # v always 0
+                (k, v) = list(stats.stats.items())[j]  # v always 0
             else:
-                (k, v) = stats.stats.items()[j] # v always 0
+                (k, v) = stats.stats.items()[j]  # v always 0
             if k == 'blacklisted_paths': stability = (100 - (element * 100 / float(SHM_SIZE)))
             stats.stats[k] = element
 
@@ -197,9 +197,9 @@ def print_summary(all_threads_stats, bytes_cov, time_elapsed, active_threads_cou
                 if stats_total.stats[k] < element:
                     stats_total.stats[k] = element
             else:
-                stats_total.stats[k] += element # cummulative element
+                stats_total.stats[k] += element  # cumulative element
 
-    if stats_total.stats['executions'] == 0.0: # wait while at least one thread finish dry run
+    if stats_total.stats['executions'] == 0.0:  # wait while at least one thread finish dry run
         return
 
     if update and not args.debug:
@@ -226,7 +226,7 @@ def print_summary(all_threads_stats, bytes_cov, time_elapsed, active_threads_cou
     bitmap_cov_str = "n/a"
     new_paths_str = "n/a"
     unique_crashes_str = "n/a"
-    if not args.simple_mode: # only related to coverage-guided mode
+    if not args.simple_mode:  # only related to coverage-guided mode
         blacklisted_paths_str = "%d" % stats_total.stats['blacklisted_paths']
         bitmap_cov_str = ("%.2f%%" % bitmap_cov)
         new_paths_str = ("%d" % stats_total.stats['new_paths'])

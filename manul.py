@@ -307,6 +307,15 @@ class Command(object):
         self.handle_return(self.timeout)
 
 
+        if PY3:
+            try:
+                self.out, self.err = self.process.communicate(timeout=self.timeout)
+            except subprocess.TimeoutExpired:
+                INFO(1, None, None, "Timeout for %s" % cmd)
+                kill_all(self.process.pid)
+        else:
+            self.out, self.err = self.process.communicate()  # watchdog will handle timeout if needed
+
     def run(self, cmd):
 
         self.exec_command(cmd)
@@ -365,7 +374,7 @@ class Fuzzer:
             WARNING(None, "Failed to parse dictionary file, dictionary is in invalid format or not accessible")
 
         self.current_file_name = None
-        self.prev_hashes = dict() # used to store hash of coverage bitmap for each fil
+        self.prev_hashes = dict()  # used to store hash of coverage bitmap for each file
         for file_name in list_of_files:
             self.prev_hashes[file_name] = None
 
@@ -409,8 +418,8 @@ class Fuzzer:
         self.stats_array = stats_array
         self.restore = restore_session
 
-        self.determenistic = args.determinstic_seed
-        if self.determenistic:
+        self.deterministic = args.deterministic_seed
+        if self.deterministic:
             random.seed(a=self.fuzzer_id)
 
         # creating output dir structure
@@ -456,7 +465,7 @@ class Fuzzer:
 
         self.is_dumb_mode = args.simple_mode
         self.input_path = args.input
-        self.target_binary_path = args.target_binary # and its arguments
+        self.target_binary_path = args.target_binary  # and its arguments
 
         self.fuzzer_stats = FuzzerStats()
         self.stats_file = None
@@ -478,12 +487,12 @@ class Fuzzer:
             self.stats_file = open(self.output_path + "/fuzzer_stats", 'r')
             content = self.stats_file.readlines()
             line = None
-            for line in content: # getting last line from file to restore ression
+            for line in content:  # getting last line from file to restore session
                 pass
             if line is None:
                 ERROR("Failed to restore fuzzer %d from stats. Invalid fuzzer_stats format" % self.fuzzer_id)
 
-            last = line[:-2] # skipping last symbol space and \n
+            last = line[:-2]  # skipping last symbol space and \n
             INFO(0, None, None, "Restoring last stats %s" % last)
             self.stats_file.close()
 
@@ -529,7 +538,7 @@ class Fuzzer:
 
     def restore_session(self, last, bitmap):
         # parse previously saved stats line
-        last = last.split(" ")[1:] # cut timestamp
+        last = last.split(" ")[1:]  # cut timestamp
         for index, stat in enumerate(last):
             stat = float(stat.split(":")[1])  # taking actual value
             if PY3:
@@ -539,10 +548,10 @@ class Fuzzer:
             self.fuzzer_stats.stats[stat_name] = stat
 
         if bitmap:
-            #restoring and syncronizing bitmap
+            # restoring and synchronizing bitmap
             '''for i in range(0, SHM_SIZE):
                 self.virgin_bits[i] = bitmap[i]
-                self.sync_bitmap_freq = self.user_sync_freq # little trick to enable syncronization
+                self.sync_bitmap_freq = self.user_sync_freq # little trick to enable synchronization
                 self.sync_bitmap()
                 self.sync_bitmap_freq = 0'''
 
@@ -550,11 +559,11 @@ class Fuzzer:
             final_list_of_files = list()
             new_files = [f for f in os.listdir(self.queue_path) if os.path.isfile(os.path.join(self.queue_path, f))]
             for file_name in new_files:
-                final_list_of_files.append((1, file_name)) # this is how we add new files
+                final_list_of_files.append((1, file_name))  # this is how we add new files
 
             self.list_of_files = self.list_of_files + final_list_of_files
 
-        if self.determenistic: # skip already seen seeds
+        if self.deterministic:  # skip already seen seeds
             for i in range(0, self.fuzzer_stats.stats['executions']):
                 random.seed(seed=self.fuzzer_id)
 
@@ -583,7 +592,7 @@ class Fuzzer:
 
             binary_path = "".join(self.target_binary_path)
             if self.cmd_fuzzing:
-                target_file_path = extract_content(target_file_path) # now it is the file content
+                target_file_path = extract_content(target_file_path)  # now it is the file content
 
             if not is_net:
                 binary_path = binary_path.replace("@@", target_file_path)
@@ -593,7 +602,7 @@ class Fuzzer:
         else:
             final_string = "".join(self.target_binary_path)
             if self.cmd_fuzzing:
-                target_file_path = extract_content(target_file_path) # now it is the file content
+                target_file_path = extract_content(target_file_path)  # now it is the file content
 
             if not is_net:
                 final_string = final_string.replace("@@", target_file_path)
@@ -677,10 +686,10 @@ class Fuzzer:
 
             self.user_mutators[module_name].init()
 
-        #init AFL fuzzer state
+        # init AFL fuzzer state
         for file_name in self.list_of_files:
             if not isinstance(file_name, string_types): file_name = file_name[1]
-            self.afl_fuzzer[file_name] = afl_fuzz.AFLFuzzer(self.token_dict, self.queue_path, file_name) #assign AFL for each file
+            self.afl_fuzzer[file_name] = afl_fuzz.AFLFuzzer(self.token_dict, self.queue_path, file_name)  #assign AFL for each file
             if self.restore:
                 self.afl_fuzzer[file_name].restore_state(self.output_path)
 
@@ -769,7 +778,7 @@ class Fuzzer:
                 continue  # ignoring volatile bytes
 
             if PY3:
-                trace_byte = trace_bits_as_str[j] # optimize it and compare by 4-8 bytes or even use xmm0?
+                trace_byte = trace_bits_as_str[j]  # optimize it and compare by 4-8 bytes or even use xmm0?
             else:
                 trace_byte = ord(trace_bits_as_str[j]) # self.trace_bits.contents[j])#
 
@@ -788,13 +797,13 @@ class Fuzzer:
                 virgin_byte = virgin_byte & ~trace_byte
 
                 if update_virgin_bits:
-                    bitmap_to_compare[j] = virgin_byte # python will handle potential syncronization issues
+                    bitmap_to_compare[j] = virgin_byte  # python will handle potential synchronization issues
 
         return ret
 
     def calibrate_test_case(self, full_file_path):
         volatile_bytes = list()
-        trace_bits_as_str = string_at(self.trace_bits, self.SHM_SIZE) # this is how we read memory in Python
+        trace_bits_as_str = string_at(self.trace_bits, self.SHM_SIZE)  # this is how we read memory in Python
 
         bitmap_to_compare = list("\x00" * self.SHM_SIZE)
         for i in range(0, self.SHM_SIZE):
@@ -804,7 +813,7 @@ class Fuzzer:
                 bitmap_to_compare[i] = ord(trace_bits_as_str[i])
 
         cmd, data = None, None
-        if self.target_ip: # in net mode we only need data
+        if self.target_ip:  # in net mode we only need data
             data = extract_content(full_file_path)
         else:
             cmd = self.prepare_cmd_to_run(full_file_path, False)
@@ -813,7 +822,7 @@ class Fuzzer:
             INFO(1, None, self.log_file, "Calibrating %s %d" % (full_file_path, i))
 
             memset(self.trace_bits, 0x0, SHM_SIZE)
-            if self.target_ip: # in net mode we only need data
+            if self.target_ip:  # in net mode we only need data
                 err_code, err_output = self.command.net_send_data_to_target(data, self.net_cmd)
             else:
                 INFO(1, None, self.log_file, cmd)
@@ -830,7 +839,7 @@ class Fuzzer:
             if err_code and err_code > 0:
                 INFO(1, None, self.log_file, "Target raised exception during calibration for %s" % full_file_path)
 
-            trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
+            trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE)  # this is how we read memory in Python
 
             if not self.disable_volatile_bytes:
                 for j in range(0, SHM_SIZE):
@@ -840,7 +849,7 @@ class Fuzzer:
                         trace_byte = ord(trace_bits_as_str[j])
                     if trace_byte != bitmap_to_compare[j]:
                         if j not in volatile_bytes:
-                            volatile_bytes.append(j) # mark offset of this byte as volatile
+                            volatile_bytes.append(j)  # mark offset of this byte as volatile
 
                 INFO(1, None, self.log_file, "We have %d volatile bytes for this new finding" % len(volatile_bytes))
 
@@ -854,9 +863,9 @@ class Fuzzer:
             self.stats_array[i] = v
 
     def is_problem_with_config(self, exc_code, err_output):
-        if exc_code == 127 or exc_code == 126: # command not found or permissions
+        if exc_code == 127 or exc_code == 126:  # command not found or permissions
             ERROR("Thread %d unable to execute target. Bash return %s" % (self.fuzzer_id, err_output))
-        elif exc_code == 124: #timeout
+        elif exc_code == 124:  # timeout
             WARNING(self.log_file, "Target failed to finish execution within given timeout, try to increase default timeout")
             return True
         return False
@@ -909,12 +918,12 @@ class Fuzzer:
             return self.is_critical_win(err_code)
         elif sys.platform == "darwin":
             return self.is_critical_mac(err_code)
-        else: # looks like Linux
+        else:  # looks like Linux
             return self.is_critifcal_linux(err_code)
 
     def mutate_radamsa(self, full_input_file_path, full_output_file_path):
         new_seed_str = ""
-        if self.determenistic:
+        if self.deterministic:
             new_seed = random.randint(0, sys.maxsize)
             new_seed_str = "--seed %d " % new_seed
 
@@ -974,8 +983,8 @@ class Fuzzer:
 
         start_time = timer()
 
-        while True: # never return
-            new_files = list() # empty the list
+        while True:  # never return
+            new_files = list()  # empty the list
             elapsed = 0
 
             for i, file_name in enumerate(self.list_of_files):
@@ -1033,16 +1042,16 @@ class Fuzzer:
                         self.fuzzer_stats.stats["last_crash_time"] = time.time()
 
                         new_name = self.generate_new_name(file_name)
-                        shutil.copy(full_output_file_path, self.crashes_path + "/" + new_name) # copying into crash folder
+                        shutil.copy(full_output_file_path, self.crashes_path + "/" + new_name)  # copying into crash folder
                         self.fuzzer_stats.stats['crashes'] += 1
 
                         if not self.is_dumb_mode:
-                            trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
+                            trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE)  # this is how we read memory in Python
                             ret = self.has_new_bits(trace_bits_as_str, True, list(), self.crash_bits, False, full_output_file_path)
                             if ret == 2:
                                 INFO(0, bcolors.BOLD + bcolors.OKGREEN, self.log_file, "Crash is unique")
                                 self.fuzzer_stats.stats['unique_crashes'] += 1
-                                shutil.copy(full_output_file_path, self.unique_crashes_path + "/" + new_name) # copying into crash folder with unique crashes
+                                shutil.copy(full_output_file_path, self.unique_crashes_path + "/" + new_name)  # copying into crash folder with unique crashes
 
                         crash_found = True
 
@@ -1052,7 +1061,7 @@ class Fuzzer:
                 if not crash_found and not self.is_dumb_mode:
                     # Reading the coverage
 
-                    trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE) # this is how we read memory in Python
+                    trace_bits_as_str = string_at(self.trace_bits, SHM_SIZE)  # this is how we read memory in Python
                     # we are not ready to update coverage at this stage due to volatile bytes
                     ret = self.has_new_bits(trace_bits_as_str, False, list(), self.virgin_bits, False, full_output_file_path)
                     if ret == 2:
@@ -1089,7 +1098,7 @@ class Fuzzer:
             self.fuzzer_stats.stats['exec_per_sec'] = self.fuzzer_stats.stats['executions'] / end_time
 
             last_stats_saved_time += elapsed
-            if last_stats_saved_time > 1: # we save fuzzer stats per iteration or once per second to avoid huge stats files
+            if last_stats_saved_time > 1:  # we save fuzzer stats per iteration or once per second to avoid huge stats files
                 self.save_stats()
                 last_stats_saved_time = 0
 
@@ -1101,11 +1110,11 @@ def get_bytes_covered(virgin_bits):
 
 def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_session, crash_bits, dbi_setup):
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    printing.DEBUG_PRINT = args.debug # FYI, multiprocessing causes global vars to be reinitialized.
+    printing.DEBUG_PRINT = args.debug  # FYI, multiprocessing causes global vars to be reinitialized.
     INFO(0, None, None, "Starting fuzzer %d" % i)
 
     fuzzer_instance = Fuzzer(files_list, i, virgin_bits, args, stats_array, restore_session, crash_bits, dbi_setup)
-    fuzzer_instance.run() # never return
+    fuzzer_instance.run()  # never return
 
 
 def check_instrumentation(target_binary):
@@ -1248,7 +1257,7 @@ def check_if_exist(files_list, path):
 
 def allocate_files_per_jobs(args):
     if args.net_config_slave is not None:
-        files = manul_network.get_files_list_from_master(args.net_config_slave, args.nfuzzers) # ask master to provide list of files
+        files = manul_network.get_files_list_from_master(args.net_config_slave, args.nfuzzers)  # ask master to provide list of files
         check_if_exist(files, args.input)
         return split_files_by_count(files, args.nfuzzers)
 
@@ -1257,13 +1266,13 @@ def allocate_files_per_jobs(args):
     if args.net_config_master is not None:
 
         ips = manul_network.get_slaves_ips(args.net_config_master)
-        slaves, total_threads_count = manul_network.get_remote_threads_count(ips) # ask slaves count and threads
+        slaves, total_threads_count = manul_network.get_remote_threads_count(ips)  # ask slaves count and threads
         total_threads_count += args.nfuzzers
 
         files = split_files_by_count(files_list, total_threads_count)
         piece_id = 0
         for ip, port, slave_threads_count in slaves:
-            manul_network.send_files_list(ip, port, files[piece_id:slave_threads_count + piece_id]) #  send them files list
+            manul_network.send_files_list(ip, port, files[piece_id:slave_threads_count + piece_id])  # send them files list
             piece_id += slave_threads_count
         files = files[piece_id:]
     else:
@@ -1405,13 +1414,13 @@ if __name__ == "__main__":
     printing.DEBUG_PRINT = args.debug
 
     binary_to_check = args.target_binary[0]
-    target_binary = binary_to_check.split(" ")[0] # here we assume that our path to binary doesn't have spaces
+    target_binary = binary_to_check.split(" ")[0]  # here we assume that our path to binary doesn't have spaces
 
     dbi_setup = None
     if args.dbi is not None:
         dbi_setup = configure_dbi(args, target_binary, args.debug)
 
-    check_binary(target_binary) # check if our binary exists and is actually instrumented
+    check_binary(target_binary)  # check if our binary exists and is actually instrumented
 
     if not args.simple_mode and args.dbi is None and not check_instrumentation(target_binary):
         ERROR("Failed to find afl's instrumentation in the target binary, try to recompile or run manul in dumb mode")
@@ -1434,7 +1443,7 @@ if __name__ == "__main__":
         os.mkdir(args.output)
         INFO(0, None, None, "Done")
 
-    #if radamsa weight is not zero, check that we can actually execute it
+    # if radamsa weight is not zero, check that we can actually execute it
     if "radamsa:0" not in args.mutator_weights:
         if sys.platform == "win32":
             check_binary("radamsa.exe")
@@ -1450,7 +1459,7 @@ if __name__ == "__main__":
         virgin_bits = multiprocessing.Array("i", SHM_SIZE)
         crash_bits = multiprocessing.Array("i", SHM_SIZE)
         for i in range(0, SHM_SIZE):
-            virgin_bits[i] = 255 # initalizing with all 0xFFs
+            virgin_bits[i] = 255  # initializing with all 0xFFs
             crash_bits[i] = 255
 
     # allocating data structures where we store all statistics about our fuzzers
@@ -1470,7 +1479,7 @@ if __name__ == "__main__":
 
     sync_t = None
     if (args.net_config_slave is not None or args.net_config_master is not None) and not args.simple_mode:
-        INFO(1, None, None, "Allocating special thread for bitmap syncronization")
+        INFO(1, None, None, "Allocating special thread for bitmap synchronization")
         ips = None
         if args.net_config_master is not None:
             ips = manul_network.get_slaves_ips(args.net_config_master)
@@ -1496,7 +1505,7 @@ if __name__ == "__main__":
                     WARNING(None, "Fuzzer %d unexpectedly terminated" % i)
 
             if sync_t is not None and not sync_t.alive():
-                WARNING(None, "Syncronization thread is not alive")
+                WARNING(None, "Synchronization thread is not alive")
 
             end = timer() - start
 
