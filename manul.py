@@ -278,6 +278,7 @@ class Command(object):
                 self.out, self.err = self.process.communicate(timeout=default_timeout)
             except subprocess.TimeoutExpired:
                 INFO(1, None, None, "Timeout occured")
+                kill_all(self.process.pid)
                 return False
         else:
             self.out, self.err = self.process.communicate() # watchdog will handle timeout if needed in PY2
@@ -305,16 +306,6 @@ class Command(object):
 
         INFO(1, None, None, "Target successfully started, waiting for result")
         self.handle_return(self.timeout)
-
-
-        if PY3:
-            try:
-                self.out, self.err = self.process.communicate(timeout=self.timeout)
-            except subprocess.TimeoutExpired:
-                INFO(1, None, None, "Timeout for %s" % cmd)
-                kill_all(self.process.pid)
-        else:
-            self.out, self.err = self.process.communicate()  # watchdog will handle timeout if needed
 
     def run(self, cmd):
 
@@ -1323,7 +1314,7 @@ def parse_args():
     parser.add_argument('-r', default=False, action='store_true', dest = "restore", help = "Restore previous session")
 
     # these options should be specified through config file and hidden
-    parser.add_argument('--determinstic_seed', default=False, action='store_true', help = argparse.SUPPRESS)
+    parser.add_argument('--deterministic_seed', default=False, action='store_true', help = argparse.SUPPRESS)
     parser.add_argument('--print_per_thread', default=False, action='store_true', dest="threads_info", help = argparse.SUPPRESS)
 
     parser.add_argument('--dbi', default = None, help = argparse.SUPPRESS)
