@@ -33,5 +33,5 @@ use_DynamoRIO_extension(binafl drwrap)
 use_DynamoRIO_extension(binafl drsyms)
 
 project(afl_test)
-
+set_source_files_properties(test.c PROPERTIES COMPILE_FLAGS "/Od" )
 add_executable(afl_test test.c)
