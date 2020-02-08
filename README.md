@@ -48,8 +48,9 @@ If you managed to find a new bug using Manul please contact me and I will add yo
 
 
 # Dependencies
+0. Python3 (Python2 is deprecated since Jan 1. 2020 but Manul should still work fine under Python2)
 1. [psutil](https://pypi.org/project/psutil/)
-2. pywin32 ('''pip install pywin32''') on Windows platform (required for DBI persistence mode only).
+2. pywin32 (```pip install pywin32```) on Windows platform (required for DBI persistence mode only).
 
 
 # Coverage-guided fuzzing
@@ -71,21 +72,20 @@ make -j 8
 
 See [these instructions](http://lcamtuf.coredump.cx/afl/QuickStartGuide.txt) for more details.
 
-## Coverage-guided fuzzing (DBI mode)
+## Coverage-guided fuzzing in DBI mode
 
-You don't need to instrument your target in this mode but you need to download the latest version of DynamoRIO framework for Windows or Linux. The working version of Intel PIN is provided with Manul. You can find it in the ```dbi_clients_src/pin/pin-3.6-97554-g31f0a167d-gcc-linux``` folder.
+You don't need to instrument your target in this mode but you need to download the latest version of DynamoRIO framework for Windows or Linux.
 
 Manul is distributed with x86/x64 precompiled clients for Linux and Windows. You can find them in the following folders:
 ```
-linux/dbi_32|dbi_64/afl-pin.so (Intel PIN client)
 linux/dbi_32|dbi_64/libbinafl.so (DynamoRIO client)
 win/dbi_32|dbi_64/binafl.dll
 ```
-Unfortunately, DynamoRIO is not officially supported on OS X. Intel PIN client on OS X is not yet ported.
+Unfortunately, DynamoRIO is not officially supported on MacOS.
 
 ### Using DynamoRIO to fuzz black-box binaries
 
-You can find DynamoRIO release packages at [DynamoRIO download page](https://github.com/DynamoRIO/dynamorio/wiki/Downloads). The supported version of DynamoRIO is 7.0.0-RC1 (see the next section if you need the latest version of DynamoRIO).
+You can find the latest DynamoRIO release packages at [DynamoRIO download page](https://github.com/DynamoRIO/dynamorio/wiki/Downloads).
 
 You have to uncomment the following lines in the ```manul.config``` file and provide correct path to DynamoRIO launcher and client.
 
@@ -98,32 +98,70 @@ dbi_client_root = /home/max/manul/linux/dbi_64/libbinafl.so
 dbi_client_libs = None
 ```
 
+Additionally, you can increase performance of your black-box fuzzing campaign by using persistent in-memory fuzzing. In this mode, you should instruct Manul to instrument particular function (yes, you need to find it by disassembling your binary) and it will run it in a loop by uncommenting the following lines:
+```
+dbi_persistence_mode = 1
+dbi_target_module = afl_test
+dbi_target_method = open_file
+#dbi_target_offset = 0x3198 # optionally you can provide offset of this function instead of name
+dbi_fuzz_iterations = 1000
+```
+winAFL authors provide a very good explanation on how it actually works [here](https://github.com/googleprojectzero/winafl/blob/master/readme_dr.md#in-app-persistence-mode). Manul uses a large portion of winAFL instrumetation library's code to communicate and instrument a target.
+
 IMPORTANT NOTE: You should use 32-bit launcher and 32-bit client to fuzz 32-bit binaries and 64-bit launcher and 64-bit client for 64-bit binaries!
 
 #### Compiling DynamoRIO client library
 
-If you want to use the latest version of [DynamoRIO](https://github.com/DynamoRIO/dynamorio/releases/download/) you need to compile instrumentation library from source code (see example below). The source code of instrumentation library can be found in ```dbi_clients_src``` located in the Manul main folder. On Windows, the compilation command (```cmake```) is the same as on Linux.
+To compile instrumentation library, you need to use the latest version of [DynamoRIO](https://github.com/DynamoRIO/dynamorio/releases/download/). The source code of instrumentation library can be found in ```dbi_clients_src``` located in the Manul main folder.
 
 ```
 64-bit Linux
 
 cd dbi_clients_src
-wget https://github.com/DynamoRIO/dynamorio/releases/download/cronbuild-7.91.18124/DynamoRIO-x86_64-Linux-7.91.18124-0.tar.gz
-tar xvf DynamoRIO-x86_64-Linux-7.91.18124-0.tar.gz
+wget <DynamoRIO-x86_64-Linux-X.XX.XXXX-X.tar.gz> - download the latest DynamoRIO
+tar xvf DynamoRIO-x86_64-X.XX.XXXX-X.tar.gz
 mkdir client_64
 cd client_64
-cmake ../dr_cov/ -DDynamoRIO_DIR=/home/max/manul/dbi_clients_src/DynamoRIO-x86_64-Linux-7.91.18124-0/cmake
+cmake ../dr_cov/ -DDynamoRIO_DIR=/home/max/manul/dbi_clients_src/DynamoRIO-x86_64-Linux-X.XX.XXXX-X.tar.gz/cmake
 make
 ```
 
-If you need to compile 32-bit library, you should download DynamoRIO-i386-Linux-```*```.tar.gz archive instead of x86_64 and specify ```CFLAGS=-m32 CXXFLAGS=-m32``` before ```cmake``` command.
+```
+32-bit Linux
+cd dbi_clients_src
+wget <DynamoRIO-i386-Linux-X.XX.XXXX-X.tar.gz> - download the latest DynamoRIO
+tar xvf DynamoRIO-x86_64-X.XX.XXXX-X.tar.gz
+mkdir client_64
+cd client_64
+CFLAGS=-m32 CXXFLAGS=-m32 cmake ../dr_cov/ -DDynamoRIO_DIR=/home/max/manul/dbi_clients_src/DynamoRIO-i386-Linux-X.XX.XXXX-X.tar.gz/cmake
+make
+```
 
+On Windows, the easiest way to compile the library would be to install Visual Studio (tested on 2017 & 2013 versions), launch ```VS20XX Cross Tools Command Prompt``` and run the following commands:
+
+```
+64-bit Windows
+cd dbi_clients_src
+<Download and extract the latest version of DynamoRIO>
+mkdir client_64
+cd client_64
+cmake -G"Visual Studio 15 Win64" ..\dr_cov\ -DDynamoRIO_DIR=C:\Users\max\manul\dbi_clients_src\DynamoRIO-Windows-XXXX.XX.X.X\cmake
+cmake --build . --config RelWithDebInfo (or just Debug if needed)
+```
+
+```
+32-bit Windows
+cd dbi_clients_src
+<Download and extract the latest version of DynamoRIO>
+mkdir client_32
+cd client_32
+cmake -G"Visual Studio 15" ..\dr_cov\ -DDynamoRIO_DIR=C:\Users\max\manul\dbi_clients_src\DynamoRIO-Windows-XXXX.XX.X.X\cmake
+cmake --build . --config RelWithDebInfo (or just Debug if needed)
+```
 
 ### Using Intel PIN to fuzz black-box binaries on Linux
 
-TBD
-
-
+Manul initially supported Intel PIN coverage-guided fuzzing but due to low performance and high maintainance overhead, this is not supported anymore.
 
 # Command-Line Arguments
 
@@ -147,7 +185,6 @@ Required parameters:
   -o OUTPUT      Path to output directory
 
 ```
-
 
 
 # Configuration File Options
@@ -181,7 +218,21 @@ Manul is distributed with default ```manul.config``` file where user can find al
 
 ```dbi_client_root = <path>```. This options tells Manul where to find DBI client to perform instrumentation.
 
-```dbi_client_libs = name_#1,name_#2|None```. This option can be used to specify list of libraries that need to be instrumented along with the main target (e.g. you have executable that loads the target library where you want to find bugs).
+```dbi_client_libs = name_#1,name_#2|None```. This option can be used to specify list of libraries that need to be instrumented along with the main target (e.g. you have executable that loads the target library + several others where you want to search for bugs).
+
+```dbi_persistence_mode = 0|1|2```. This option is used to choose between DBI persistent modes. 0 - no persistence, 1 - standard persistence (function wrapping), 2 - not yet supported.
+
+If ```dbi-persistence_mode = 1|2``` the following options should be specified:
+
+```dbi_target_module = <module name>```. Manul will try to search for target function in the module specified here.
+
+```dbi_target_method = <function name>```. Function name to be wrapped for persistence.  
+
+```dbi_target_offset = <offset of function e.g. 0x3198>```. Function offset to be wrapped for persistence. This option can be used instead of ```dbi_target_method``` if debug symbols are not available.
+
+```dbi_fuzz_iterations = 500```. The number of fuzz iterations to run in-memory before the whole program restarts. You can play with this argument to find the value that works the best with your target.
+ 
+```dbi_thread_coverage = False```. Instrument coverage only from a thread that executed the target function (not yet supported).
 
 #### Timeout
 ```timeout = 10```. Time to wait before kill the target and send the next test case.
