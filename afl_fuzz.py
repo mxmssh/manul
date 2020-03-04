@@ -459,8 +459,7 @@ def havoc_remove_randomly_block(data):
 def prepare_block(data):
     actually_clone = RAND(4)
     data_len = len(data)
-    if data_len < 4: # doesn't make sense to clone blocks less than 4 bytes
-        return 0,0,0
+
     if actually_clone:
         clone_len = AFL_choose_block_len(data_len)
         clone_from = RAND(data_len - clone_len + 1 )
