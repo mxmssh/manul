@@ -17,6 +17,8 @@
 
 from afl_fuzz import *
 import copy
+import radamsa
+import sys
 
 def test_bitflip(data, iteration_id):
 
@@ -313,6 +315,15 @@ def extra_test_havoc_remove_randomly_block():
         if data_extra == b"":
             print("extra_test_havoc_remove_randomly_block failed!")
 
+def test_radamsa_library(): # TODO: make it work on Windows
+    #test_cycle(bytearray("")) # no string at all
+    radamsa_fuzzer = radamsa.RadamsaFuzzer(3)
+    radamsa_fuzzer.load_library("./libradamsa/libradamsa.so")
+    res = radamsa_fuzzer.radamsa_generate_output(b"ABDSDADA")
+    print("Radamsa output %s" % res)
+    if len(res) == 0:
+        print("radamsa library test failed")
+
 if __name__ == "__main__":
     test_cycle(bytearray("AAAAAAAAA", "utf-8"))  # regular string
     test_cycle(bytearray("AAAA", "utf-8"))  # short string
@@ -324,4 +335,6 @@ if __name__ == "__main__":
         print("is_bytearray_equal failed")
     else:
         print("is_bytearray_equal succeeded")
-    #test_cycle(bytearray("")) # no string at all
+
+    if sys.platform == "linux":
+        test_radamsa_library()

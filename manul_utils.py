@@ -33,6 +33,7 @@ STATS_FREQUENCY = 1
 SHM_SIZE = 65535
 IGNORE_ABORT = True
 UPDATE = True
+MAX_SEED = 1024*1024*1024
 
 PY3 = sys.version_info[0] == 3
 

@@ -32,6 +32,7 @@ import afl_fuzz
 import zlib
 import importlib
 import dbi_mode
+import radamsa
 
 PY3 = sys.version_info[0] == 3
 
@@ -328,8 +329,19 @@ class Fuzzer:
         self.SHM_SIZE = SHM_SIZE
         self.CALIBRATIONS_COUNT = 7
         self.SHM_ENV_VAR = "__AFL_SHM_ID"
+
+        self.deterministic = args.deterministic_seed
+        if self.deterministic:
+            random.seed(a=self.fuzzer_id)
+
         self.dbi = args.dbi
         self.afl_fuzzer = dict()
+        if sys.platform == "linux":
+            self.radamsa_fuzzer = radamsa.RadamsaFuzzer(RAND(MAX_SEED))
+            self.radamsa_fuzzer.load_library("./libradamsa/libradamsa.so")
+        else:
+            self.radamsa_fuzzer = None
+
         self.token_dict = list()
         self.timeout = args.timeout
         self.disable_volatile_bytes = args.disable_volatile_bytes
@@ -408,10 +420,6 @@ class Fuzzer:
 
         self.stats_array = stats_array
         self.restore = restore_session
-
-        self.deterministic = args.deterministic_seed
-        if self.deterministic:
-            random.seed(a=self.fuzzer_id)
 
         # creating output dir structure
         self.output_path = args.output + "/%d" % fuzzer_id
@@ -913,6 +921,12 @@ class Fuzzer:
             return self.is_critifcal_linux(err_code)
 
     def mutate_radamsa(self, full_input_file_path, full_output_file_path):
+        if sys.platform == "linux":
+            data = extract_content(full_input_file_path)
+            data_new = self.radamsa_fuzzer.radamsa_generate_output(bytes(data))
+            save_content(data_new, full_output_file_path)
+            return 0
+
         new_seed_str = ""
         if self.deterministic:
             new_seed = random.randint(0, sys.maxsize)
@@ -1439,7 +1453,7 @@ if __name__ == "__main__":
         if sys.platform == "win32":
             check_binary("radamsa.exe")
         else:
-            check_binary("radamsa")
+            check_binary("./libradamsa/libradamsa.so")
 
 
     files = allocate_files_per_jobs(args)
