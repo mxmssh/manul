@@ -1452,6 +1452,7 @@ if __name__ == "__main__":
         INFO(0, None, None, "Done")
 
     # if radamsa weight is not zero, check that we can actually execute it
+    radamsa_path = None
     if "radamsa:0" not in args.mutator_weights:
         #get relative path to radamsa binary
         radamsa_path = __file__
