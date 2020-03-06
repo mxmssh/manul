@@ -8,7 +8,7 @@ environment:
 build: off
 
 install:
-  - "%PYTHONENV%/Scripts/pip.exe install psutil"
+  - "%PYTHONENV%/Scripts/pip.exe install psutil, pywin32"
 
 test_script:
   - "%PYTHONENV%/python.exe --version"
