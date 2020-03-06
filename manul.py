@@ -36,6 +36,8 @@ import radamsa
 
 PY3 = sys.version_info[0] == 3
 
+RADAMSA_PATH = ""
+
 if PY3:
     string_types = str,
     xrange = range
@@ -336,9 +338,9 @@ class Fuzzer:
 
         self.dbi = args.dbi
         self.afl_fuzzer = dict()
-        if sys.platform == "linux":
+        if "linux" in sys.platform and "radamsa" in args.mutator_weights:
             self.radamsa_fuzzer = radamsa.RadamsaFuzzer(RAND(MAX_SEED))
-            self.radamsa_fuzzer.load_library("./libradamsa/libradamsa.so")
+            self.radamsa_fuzzer.load_library(RADAMSA_PATH)
         else:
             self.radamsa_fuzzer = None
 
@@ -921,7 +923,7 @@ class Fuzzer:
             return self.is_critifcal_linux(err_code)
 
     def mutate_radamsa(self, full_input_file_path, full_output_file_path):
-        if sys.platform == "linux":
+        if "linux" in sys.platform: # on Linux we just use a shared library to speed up test cases generation
             data = extract_content(full_input_file_path)
             data_new = self.radamsa_fuzzer.radamsa_generate_output(bytes(data))
             save_content(data_new, full_output_file_path)
@@ -932,7 +934,7 @@ class Fuzzer:
             new_seed = random.randint(0, sys.maxsize)
             new_seed_str = "--seed %d " % new_seed
 
-        cmd = "radamsa %s%s > %s" % (new_seed_str, full_input_file_path, full_output_file_path)
+        cmd = "%s %s%s > %s" % (RADAMSA_PATH, new_seed_str, full_input_file_path, full_output_file_path)
 
         INFO(1, None, self.log_file, "Running %s" % cmd)
         try:
@@ -1450,11 +1452,15 @@ if __name__ == "__main__":
 
     # if radamsa weight is not zero, check that we can actually execute it
     if "radamsa:0" not in args.mutator_weights:
+        #get relative path to radamsa binary
+        RADAMSA_PATH = __file__
+        RADAMSA_PATH = RADAMSA_PATH.replace("manul.py", "")
         if sys.platform == "win32":
-            check_binary("radamsa.exe")
+            RADAMSA_PATH = RADAMSA_PATH + "radamsa.exe"
         else:
-            check_binary("./libradamsa/libradamsa.so")
-
+            RADAMSA_PATH = RADAMSA_PATH + "./libradamsa/libradamsa.so"
+        INFO(1, None, None, "Full relative path to radamsa %s" % RADAMSA_PATH)
+        check_binary(RADAMSA_PATH)
 
     files = allocate_files_per_jobs(args)
 

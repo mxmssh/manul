@@ -207,7 +207,7 @@ def extract_content(file_name):
     return content
 
 fd_dict = dict()
-def save_content(data, output_file_path):
+def save_content_lin(data, output_file_path):
     global fd_dict
     fd = fd_dict.get(output_file_path, None)
     if not fd:
@@ -221,6 +221,23 @@ def save_content(data, output_file_path):
     fd.flush()
     #fd.close()
     return 1
+
+# on Windows, it is better to close the file before we can send it into the target to avoid any sync problems
+def save_content_win(data, output_file_path):
+    fd = open(output_file_path, 'wb')
+    if not fd:
+        printing.ERROR("Failed to open output file, aborting")
+    fd.write(data)
+    fd.flush()
+    fd.close() # TODO: find the way to avoid closing it on Windows
+    return 1
+
+def save_content(data, output_file_path):
+    if sys.platform == "win32":
+        save_content_win(data, output_file_path)
+    else: # #TODO: test it on MacOS
+        save_content_lin(data, output_file_path)
+
 
 def is_bytearrays_equal(data1, data2):
     if not PY3:
