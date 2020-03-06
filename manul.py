@@ -36,8 +36,6 @@ import radamsa
 
 PY3 = sys.version_info[0] == 3
 
-RADAMSA_PATH = ""
-
 if PY3:
     string_types = str,
     xrange = range
@@ -324,7 +322,7 @@ class Command(object):
 
 class Fuzzer:
     def __init__(self, list_of_files, fuzzer_id, virgin_bits_global, args, stats_array, restore_session, crash_bits,
-                 dbi_setup):
+                 dbi_setup, radamsa_path):
         # local fuzzer config
         INFO(1, None, None, "Performing intialization of fuzzer %d" % fuzzer_id)
         global SHM_SIZE, net_sleep_between_cases
@@ -338,9 +336,10 @@ class Fuzzer:
 
         self.dbi = args.dbi
         self.afl_fuzzer = dict()
+        self.radamsa_path = radamsa_path
         if "linux" in sys.platform and "radamsa" in args.mutator_weights:
             self.radamsa_fuzzer = radamsa.RadamsaFuzzer(RAND(MAX_SEED))
-            self.radamsa_fuzzer.load_library(RADAMSA_PATH)
+            self.radamsa_fuzzer.load_library(self.radamsa_path)
         else:
             self.radamsa_fuzzer = None
 
@@ -934,7 +933,7 @@ class Fuzzer:
             new_seed = random.randint(0, sys.maxsize)
             new_seed_str = "--seed %d " % new_seed
 
-        cmd = "%s %s%s > %s" % (RADAMSA_PATH, new_seed_str, full_input_file_path, full_output_file_path)
+        cmd = "%s %s%s > %s" % (self.radamsa_path, new_seed_str, full_input_file_path, full_output_file_path)
 
         INFO(1, None, self.log_file, "Running %s" % cmd)
         try:
@@ -1115,12 +1114,14 @@ def get_bytes_covered(virgin_bits):
     return len(non_zeros)
 
 
-def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_session, crash_bits, dbi_setup):
+def run_fuzzer_instance(files_list, i, virgin_bits, args, stats_array, restore_session,
+                        crash_bits, dbi_setup, radamsa_path):
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     printing.DEBUG_PRINT = args.debug  # FYI, multiprocessing causes global vars to be reinitialized.
     INFO(0, None, None, "Starting fuzzer %d" % i)
 
-    fuzzer_instance = Fuzzer(files_list, i, virgin_bits, args, stats_array, restore_session, crash_bits, dbi_setup)
+    fuzzer_instance = Fuzzer(files_list, i, virgin_bits, args, stats_array, restore_session,
+                             crash_bits, dbi_setup, radamsa_path)
     fuzzer_instance.run()  # never return
 
 
@@ -1453,14 +1454,14 @@ if __name__ == "__main__":
     # if radamsa weight is not zero, check that we can actually execute it
     if "radamsa:0" not in args.mutator_weights:
         #get relative path to radamsa binary
-        RADAMSA_PATH = __file__
-        RADAMSA_PATH = RADAMSA_PATH.replace("manul.py", "")
+        radamsa_path = __file__
+        radamsa_path = radamsa_path.replace("manul.py", "")
         if sys.platform == "win32":
-            RADAMSA_PATH = RADAMSA_PATH + "radamsa.exe"
+            radamsa_path = radamsa_path + "radamsa.exe"
         else:
-            RADAMSA_PATH = RADAMSA_PATH + "./libradamsa/libradamsa.so"
-        INFO(1, None, None, "Full relative path to radamsa %s" % RADAMSA_PATH)
-        check_binary(RADAMSA_PATH)
+            radamsa_path = radamsa_path + "./libradamsa/libradamsa.so"
+        INFO(1, None, None, "Full relative path to radamsa %s" % radamsa_path)
+        check_binary(radamsa_path)
 
     files = allocate_files_per_jobs(args)
 
@@ -1481,7 +1482,7 @@ if __name__ == "__main__":
     for i, files_piece in enumerate(files):
         stats_array = multiprocessing.Array("d", stats.get_len())
         t = multiprocessing.Process(target=run_fuzzer_instance, args=(files_piece, i, virgin_bits, args, stats_array,
-                                                                      args.restore, crash_bits, dbi_setup))
+                                                                      args.restore, crash_bits, dbi_setup, radamsa_path))
         t.start()
         all_threads_stats.append(stats_array)
         all_threads_handles.append(t)
