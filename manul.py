@@ -339,6 +339,7 @@ class Fuzzer:
         self.radamsa_path = radamsa_path
         if "linux" in sys.platform and "radamsa" in args.mutator_weights:
             self.radamsa_fuzzer = radamsa.RadamsaFuzzer(RAND(MAX_SEED))
+            INFO(0, None, None, "Radamsa library successfully loaded %s" % self.radamsa_fuzzer)
             self.radamsa_fuzzer.load_library(self.radamsa_path)
         else:
             self.radamsa_fuzzer = None
