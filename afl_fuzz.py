@@ -513,11 +513,11 @@ def havoc_insert_with_dict(data):
     return data
 
 #TODO: https://github.com/mirrorer/afl/blob/2fb5a3482ec27b593c57258baae7089ebdc89043/afl-fuzz.c#L6478
-def havoc(data, func_state):
+def havoc(data, func_state, max_havoc_cycles):
     if not func_state:
         func_state = 0
 
-    if func_state >= AFL_HAVOC_CYCLES: # TODO: havoc length should be calculated based on performance not on constant value
+    if func_state >= max_havoc_cycles:
         return data, None
 
     # havoc_randomly used twice to increase chances
@@ -537,7 +537,7 @@ def havoc(data, func_state):
     return data, func_state
 
 
-def splice(data, list_of_files, queue_path, func_state):
+def splice(data, list_of_files, queue_path, func_state, max_havoc_cycles):
     data_len = len(data)
     if data_len <= 2:
         return data, None
@@ -559,40 +559,100 @@ def splice(data, list_of_files, queue_path, func_state):
     else:
         # TODO: currently we don't touch original files (which is not right I believe)
         del list_of_files[file_id]
-        return splice(data, list_of_files, queue_path, None)
+        return splice(data, list_of_files, queue_path, None, max_havoc_cycles)
 
     content_target = extract_content(picked_file_name)
     content_target_len = len(content_target)
 
     if content_target_len < 2 or is_bytearrays_equal(data, content_target):
         del list_of_files[file_id]
-        return splice(data, list_of_files, queue_path, None)
+        return splice(data, list_of_files, queue_path, None, max_havoc_cycles)
 
     f_diff, l_diff = locate_diffs(data, content_target, MIN(data_len, content_target_len))
 
     if l_diff < 2 or f_diff == l_diff: # afl has f_diff == 0 but I believe we want to start with 0
         del list_of_files[file_id]
-        return splice(data, list_of_files, queue_path, None)
+        return splice(data, list_of_files, queue_path, None, max_havoc_cycles)
 
     split_last_byte = f_diff + RAND(l_diff - f_diff)
     block = data[f_diff:f_diff+split_last_byte]
     content_target = content_target[:f_diff] + block + content_target[f_diff+split_last_byte:]
     data = content_target
 
-    data, res = havoc(data, 0)
+    data, res = havoc(data, 0, max_havoc_cycles)
 
     return data, func_state
+
+# calculate AFL-like performance score
+def calculate_perf_score(exec_per_sec, avg_exec_per_sec, bitmap_size, avg_bitmap_size, handicap):
+    perf_score = 100
+    if exec_per_sec * 0.1 > avg_exec_per_sec: perf_score = 10
+    elif exec_per_sec * 0.25 > avg_exec_per_sec: perf_score = 25
+    elif exec_per_sec * 0.5 > avg_exec_per_sec: perf_score = 50
+    elif exec_per_sec * 0.75 > avg_exec_per_sec: perf_score = 75
+    elif exec_per_sec * 4 < avg_exec_per_sec: perf_score = 300
+    elif exec_per_sec < avg_exec_per_sec: perf_score = 200
+    elif exec_per_sec * 2 < avg_exec_per_sec: perf_score = 150
+
+    if bitmap_size * 0.3 > avg_bitmap_size: perf_score *= 3;
+    elif bitmap_size * 0.5 > avg_bitmap_size: perf_score *= 2;
+    elif bitmap_size * 0.75 > avg_bitmap_size: perf_score *= 1.5;
+    elif bitmap_size * 3 < avg_bitmap_size: perf_score *= 0.25;
+    elif bitmap_size * 2 < avg_bitmap_size: perf_score *= 0.5;
+    elif bitmap_size * 1.5 < avg_bitmap_size: perf_score *= 0.75;
+
+    if handicap > 4:
+        perf_score *= 4
+        # TODO: handicap -= 4
+    elif handicap:
+        per_score *= 2
+        #TODO handicap -= 1
+
+    return perf_score
+
+
+# Calculates maximum number of cycles
+def get_havoc_cycles(exec_per_sec, perf_score, splice):
+    havoc_div = 1
+    if exec_per_sec < 20:
+        havoc_div = 10
+    elif exec_per_sec >= 20 and exec_per_sec < 50:
+        havoc_div = 5
+    elif exec_per_sec >= 50 and exec_per_sec < 100:
+        havoc_div = 2
+
+    # from AFL source code
+    # stage_max = (doing_det ? HAVOC_CYCLES_INIT : HAVOC_CYCLES) * perf_score / havoc_div / 100;
+    # doing_det is -d flag of afl (not supported)
+
+    if splice:
+        stage_max = AFL_SPLICE_HAVOC * perf_score / havoc_div / 100;
+    else:
+        stage_max = AFL_HAVOC_CYCLES * perf_score / havoc_div / 100
+
+
+    # if not splice:
+        # TODO: if (queued_paths != havoc_queued)
+        # if we see more paths found by havoc spend more time
+        #if perf_score <= AFL_HAVOC_MAX_MULT * 100:
+        #    stage_max *= 2
+        #    perf_score *= 2
+
+    return stage_max, perf_score
+
 
 class AFLFuzzer(object):
     def __init__(self, user_tokens_dict, queue_path, file_name):
         global tokens_list, tokens_list_length
         self.possible_stages = OrderedDict()
 
+        # The order of this functions is super important. Splice must be the last and
+        # havoc must be before splice.
         self.list_of_functions = [bitflip_1bit, bitflip_2bits, bitflip_4bits,
                                   byteflip_1, byteflip_2, byteflip_4,
                                   mutate_byte_arithmetic, mutate_2bytes_arithmetic, mutate_4bytes_arithmetic,
                                   mutate_1byte_interesting, mutate_2bytes_interesting, mutate_4bytes_interesting,
-                                  dictionary_overwrite, dictionary_insert, havoc, splice] # splice should be the last
+                                  dictionary_overwrite, dictionary_insert, havoc, splice]
         self.current_function = self.list_of_functions[0]
         self.file_name = file_name
         self.current_result = None
@@ -601,6 +661,9 @@ class AFLFuzzer(object):
         self.queue_path = queue_path
         tokens_list = user_tokens_dict
         tokens_list_length = len(tokens_list)
+        self.new_havoc_cycle = True
+        self.perf_score = 100
+        self.orig_perf_score = 100
 
 
     def save_state(self, output_path):
@@ -639,7 +702,8 @@ class AFLFuzzer(object):
         INFO(1, None, None, "%s %s %s" % (self.file_name, self.current_result, self.current_function))
 
 
-    def mutate(self, data, list_of_files):
+    def mutate(self, data, list_of_files, exec_per_sec, avg_exec_per_sec, bitmap_size,
+               avg_bitmap_size, handicap):
         if len(data) <= 0:
             return data
 
@@ -649,8 +713,32 @@ class AFLFuzzer(object):
         INFO(1, None, None, "Running %s stage of AFL mutator" % self.current_function)
 
         if (self.current_function_id % self.total_func_count) == (self.total_func_count - 1): # if splice
+
+            if self.new_havoc_cycle:
+                self.havoc_max_stages, self.perf_score = get_havoc_cycles(exec_per_sec, self.perf_score, True)
+                self.new_havoc_cycle = False
+
             # FYI: we are sending copy of list_of_files instead of actual list_of_files in slice
-            data, self.current_result = self.current_function(data, list(list_of_files), self.queue_path, self.current_result)
+            data, self.current_result = self.current_function(data, list(list_of_files),
+                                                              self.queue_path,
+                                                              self.current_result,
+                                                              self.havoc_max_stages)
+            if not self.current_result:
+                self.new_havoc_cycle = True
+                self.perf_score = self.orig_perf_score
+
+        elif (self.current_function_id % self.total_func_count) == (self.total_func_count - 2): # if havoc
+            if self.new_havoc_cycle:
+                self.perf_score = calculate_perf_score(exec_per_sec, avg_exec_per_sec, bitmap_size,
+                                                   avg_bitmap_size, handicap)
+                self.orig_perf_score = self.perf_score
+                self.havoc_max_stages, self.perf_score = get_havoc_cycles(exec_per_sec, self.perf_score, False)
+                self.new_havoc_cycle = False
+            data, self.current_result = self.current_function(data, self.current_result,
+                                                              self.havoc_max_stages)
+            if not self.current_result:
+                self.new_havoc_cycle = True
+                self.perf_score = self.orig_perf_score
         else:
             data, self.current_result = self.current_function(data, self.current_result)
 

@@ -290,7 +290,7 @@ def test_splice(data, iteration_id):
     print("Starting splice")
     queue_path = "./"  # current path where we run this unit_tests.py
     list_of_files = [(1, "manul.config"), (1, "unit_tests.py")]
-    data, func_state = splice(data, list_of_files, queue_path, None)
+    data, func_state = splice(data, list_of_files, queue_path, None, 20)
     print("Result of splice:", data)
     return True
 
@@ -324,12 +324,20 @@ def test_radamsa_library(): # TODO: make it work on Windows
     if len(res) == 0:
         print("radamsa library test failed")
 
+def extra_test_havoc_add_random_block():
+    data = b'A'
+    data = havoc_clone_randomly_block(data)
+    if len(data) <= 1:
+        print("extra_test_havoc_add_random_block failed!")
+    print("Result of add random block %s" % data)
+
 if __name__ == "__main__":
     test_cycle(bytearray("AAAAAAAAA", "utf-8"))  # regular string
     test_cycle(bytearray("AAAA", "utf-8"))  # short string
     test_cycle(bytearray("AA", "utf-8"))  # shorter string
     test_cycle(bytearray("A", "utf-8"))  # the shortest string
     extra_test_havoc_remove_randomly_block()
+    extra_test_havoc_add_random_block()
 
     if is_bytearrays_equal(b"AAAAAA", b"AAAAAA") == False or is_bytearrays_equal(b"AAAAAAA", b"BEBEBEBE") == True:
         print("is_bytearray_equal failed")

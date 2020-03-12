@@ -417,7 +417,9 @@ class Fuzzer:
 
         self.global_map = virgin_bits_global
         self.crash_bits = crash_bits  # happens not too often
-
+        self.bitmap_size = 0
+        self.avg_bitmap_size = 0
+        self.avg_exec_per_sec = 0
 
         self.stats_array = stats_array
         self.restore = restore_session
@@ -791,6 +793,8 @@ class Fuzzer:
                 if ret < 2:
                     if virgin_byte == 0xff:
                         ret = 2  # new path discovered
+                        if update_virgin_bits:
+                            self.bitmap_size += 1
                     else:
                         ret = 1  # new hit of existent paths
 
@@ -947,7 +951,10 @@ class Fuzzer:
 
     def mutate_afl(self, file_name, full_input_file_path, full_output_file_path):
         data = extract_content(full_input_file_path)
-        res = self.afl_fuzzer[file_name].mutate(data, self.list_of_files)
+        res = self.afl_fuzzer[file_name].mutate(data, self.list_of_files,
+                                                self.fuzzer_stats.stats['exec_per_sec'],
+                                                self.avg_exec_per_sec, self.bitmap_size,
+                                                self.avg_bitmap_size, 0) # TODO: handicap
         if not res:
             WARNING(self.log_file, "Unable to mutate data provided using afl")
             return 1
@@ -988,10 +995,12 @@ class Fuzzer:
             INFO(0, bcolors.BOLD + bcolors.OKBLUE, self.log_file, "Session successfully restored")
 
         start_time = timer()
+        cycle_id = 0
 
         while True:  # never return
             new_files = list()  # empty the list
             elapsed = 0
+            cycle_id += 1
 
             for i, file_name in enumerate(self.list_of_files):
                 self.current_file_name = file_name
@@ -1102,6 +1111,8 @@ class Fuzzer:
 
             end_time = timer() - start_time
             self.fuzzer_stats.stats['exec_per_sec'] = self.fuzzer_stats.stats['executions'] / end_time
+            self.avg_exec_per_sec += int(self.fuzzer_stats.stats['exec_per_sec'] / cycle_id)
+            self.avg_bitmap_size += int(self.bitmap_size / cycle_id)
 
             last_stats_saved_time += elapsed
             if last_stats_saved_time > 1:  # we save fuzzer stats per iteration or once per second to avoid huge stats files
