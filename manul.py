@@ -1433,7 +1433,7 @@ if __name__ == "__main__":
     printing.DEBUG_PRINT = args.debug
 
     binary_to_check = args.target_binary[0]
-    target_binary = binary_to_check.split(" ")[0]  # here we assume that our path to binary doesn't have spaces
+    target_binary = split_unescape(binary_to_check, ' ', '\\')[0]
 
     dbi_setup = None
     if args.dbi is not None:
