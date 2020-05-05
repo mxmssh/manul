@@ -16,7 +16,7 @@ cd manul
 mkdir in
 mkdir out
 echo "AAAAAA" > in/test
-python3 manul.py -i in -o out -n 4 "linux/test_afl @@"
+python3 manul.py -i in -o out -n 4 "linux/test/test_afl @@"
 ```
 
 ### Installing Radamsa
