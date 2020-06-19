@@ -21,6 +21,7 @@ import psutil
 import subprocess
 import argparse
 import signal
+import hashlib
 
 GEN_TOTAL_FREQ = 100
 
@@ -60,17 +61,41 @@ def handle_return(process, default_timeout, is_print):
 
 def execute_command(cmd_to_run, timeout, is_print):
     print(cmd_to_run)
-    process = subprocess.Popen(cmd_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    preexec_fn=os.setsid)
+    if args.win:
+        process = subprocess.Popen(cmd_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    else:
+        process = subprocess.Popen(cmd_to_run, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                        preexec_fn=os.setsid)
 
     handle_return(process, timeout, is_print)
     return None
 
+def get_hash(file_full_path):
+    # BUF_SIZE is totally arbitrary, change for your app!
+    BUF_SIZE = 65536  # lets read stuff in 64kb chunks!
+    sha1 = hashlib.sha1()
+    with open(file_full_path, 'rb') as f:
+        while True:
+            data = f.read(BUF_SIZE)
+            if not data:
+                break
+            sha1.update(data)
+
+    return sha1.hexdigest()
+    
+
 def parse_manul_dir(manul_out_dir):
     queue_list = list()
+    hash_list = list()
     for subdir, dirs, files in os.walk(manul_out_dir):
         if "queue" in subdir and ".state" not in subdir:
             for file in files:
+                new_hash = get_hash(os.path.join(subdir, file))
+                if new_hash in hash_list:
+                    print("Duplicate file %s" % os.path.join(subdir, file))
+                    continue
+                else:
+                    hash_list.append(new_hash)
                 queue_list.append(os.path.join(subdir, file))
     return queue_list
 
@@ -107,11 +132,17 @@ if __name__ == "__main__":
                                      description = 'Script to obtain function level coverage from Manul or AFL output dir.',
                                      usage = '%(prog)s -src [path_to_src] -fuzzing_out [path_to_manul_out_dir] -out [dir_to_save_results] "/path/binary -a -b @@"')
     requiredNamed = parser.add_argument_group('Required parameters')
+    requiredNamed.add_argument("-dr_path", required=False, default=None, dest="dynamorio_path", help = "Evaluate coverage from winAFL/manul on Windows")
     requiredNamed.add_argument("-src", required=True, dest="src_files", help = "Path to directory with project source code compiled with gcov")
     requiredNamed.add_argument("-fuzzing_out", required=True, dest="manul_out_dir", help = "Path to directory where Manul or AFL saved results")
     requiredNamed.add_argument("-out", required=True, dest="res_out_dir", help = "Path to directory where coverage results should be saved")
+    requiredNamed.add_argument("-win", required=False, default = False, action = 'store_true', help = "Evaluate coverage from wiNAFL/manul on Windows")
     requiredNamed.add_argument('cmd_to_run', nargs='*', help="The target binary and options to be executed (quotes needed e.g. \"target -png @@\")")
     args = parser.parse_args()
+    print(args)
+    if args.win and not args.dynamorio_path:
+        print("DynamoRIO path should be specified for Windows code coverage evaluation")
+        sys.exit(0)
     if not is_folder_clean(args.res_out_dir):
         print("Folder %s is not empty. Please clean it before launching the script" % args.res_out_dir)
         sys.exit(0)
@@ -126,7 +157,14 @@ if __name__ == "__main__":
     for i, file_to_execute in enumerate(files_to_run):
         print("%d out of %d" % (i, len(files_to_run)))
         final_cmd_to_run = cmd_to_run.replace("@@", file_to_execute)
-        execute_command(final_cmd_to_run, 120, False)
-        handle_coverage(args.src_files, args.res_out_dir, i)
+        if args.win:
+            final_cmd_to_run = "%s\\drrun.exe -t drcov -logdir %s -- %s" % (args.dynamorio_path, args.res_out_dir, final_cmd_to_run)
+            execute_command(final_cmd_to_run, 180, False)
+        else:
+            execute_command(final_cmd_to_run, 120, False)
+            handle_coverage(args.src_files, args.res_out_dir, i)
 
-    generate_report(args.res_out_dir)
+    if args.win:
+        print("log files has been saved in %s dir. Provide them to lighthouse to get code coverage evaluation" % args.res_out_dir)
+    else:
+        generate_report(args.res_out_dir)
