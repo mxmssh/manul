@@ -24,6 +24,7 @@ import signal
 import hashlib
 
 GEN_TOTAL_FREQ = 100
+DEBUG = False
 
 def get_list_of_files(out_dir, ext = None):
     queue_list = list()
@@ -55,7 +56,7 @@ def handle_return(process, default_timeout, is_print):
     except subprocess.TimeoutExpired:
         kill_all(process.pid)
         return False
-    if is_print:
+    if is_print or DEBUG:
         print(out.decode("utf-8"), err.decode("utf-8"))
     return True
 
@@ -99,25 +100,21 @@ def parse_manul_dir(manul_out_dir):
                 queue_list.append(os.path.join(subdir, file))
     return queue_list
 
-def aggregate_coverage(out_dir, full_report_name):
-    aggr_cmd_to_run = "lcov"
-    for file_name in get_list_of_files(out_dir, ".info"):
-        aggr_cmd_to_run += " -a " + file_name
-    execute_command(aggr_cmd_to_run + " -o %s" % (full_report_name), 30, True)
+def handle_coverage(src_files, out_dir, branch_coverage):
+    exec_command = "lcov "
+    if branch_coverage:
+        exec_command += "--rc lcov_branch_coverage=1 "
+    execute_command(exec_command + "-c -d %s -o %s/total.info" % (src_files, out_dir), 120, False) 
 
+def generate_report(res_out_dir, branch_coverage):
+    exec_command = "genhtml "
+    if branch_coverage:
+        exec_command += "--branch-coverage "
+    execute_command(exec_command + "%s/total.info -o %s" % (res_out_dir, res_out_dir), 120, True)
 
-def handle_coverage(src_files, out_dir, iteration):
-    execute_command("lcov -c -d %s -o %s/tmp_%d.info" % (src_files, out_dir, iteration), 30, False) 
-    if iteration > 0 and (iteration % GEN_TOTAL_FREQ == 0):
-        # aggregating coverage into for every 100's run
-        print("Aggregating coverage")
-        aggregate_coverage(out_dir, "%s/total_%d.info" % (out_dir, iteration))
-        execute_command("rm -f %s/tmp_*" % (out_dir), 30, False)
-        execute_command("rm -f %s/total_%d.info" % (out_dir, i - GEN_TOTAL_FREQ), 30, False)
-
-def generate_report(res_out_dir):
-    aggregate_coverage(res_out_dir, "%s/total.info" % res_out_dir)
-    execute_command("genhtml %s/total.info -o %s" % (res_out_dir, res_out_dir), 30, True)
+def clean_src_dir(src_folder):
+    execute_command("lcov -z -d %s" % src_folder, 120, True)
+    execute_command("lcov --initial -c -d %s" % src_folder, 120, False)
 
 def is_folder_clean(res_out_dir):
     if not os.path.exists(res_out_dir):
@@ -134,12 +131,14 @@ if __name__ == "__main__":
     requiredNamed = parser.add_argument_group('Required parameters')
     requiredNamed.add_argument("-dr_path", required=False, default=None, dest="dynamorio_path", help = "Evaluate coverage from winAFL/manul on Windows")
     requiredNamed.add_argument("-src", required=True, dest="src_files", help = "Path to directory with project source code compiled with gcov")
+    
     requiredNamed.add_argument("-fuzzing_out", required=True, dest="manul_out_dir", help = "Path to directory where Manul or AFL saved results")
     requiredNamed.add_argument("-out", required=True, dest="res_out_dir", help = "Path to directory where coverage results should be saved")
     requiredNamed.add_argument("-win", required=False, default = False, action = 'store_true', help = "Evaluate coverage from wiNAFL/manul on Windows")
+    requiredNamed.add_argument("-branch", required=False, default = False, action = 'store_true', help = "Evaluate branch coverage on Linux")
     requiredNamed.add_argument('cmd_to_run', nargs='*', help="The target binary and options to be executed (quotes needed e.g. \"target -png @@\")")
     args = parser.parse_args()
-    print(args)
+ 
     if args.win and not args.dynamorio_path:
         print("DynamoRIO path should be specified for Windows code coverage evaluation")
         sys.exit(0)
@@ -151,20 +150,22 @@ if __name__ == "__main__":
     if not files_to_run or len(files_to_run) == 0:
         print("Unable to enumerate files from queue in the directory provided. Please specify correct Manul or AFL dir")
         sys.exit(0)
-    
     cmd_to_run = "".join(args.cmd_to_run)
+    clean_src_dir(args.src_files)
 
     for i, file_to_execute in enumerate(files_to_run):
         print("%d out of %d" % (i, len(files_to_run)))
+ 
         final_cmd_to_run = cmd_to_run.replace("@@", file_to_execute)
         if args.win:
             final_cmd_to_run = "%s\\drrun.exe -t drcov -logdir %s -- %s" % (args.dynamorio_path, args.res_out_dir, final_cmd_to_run)
             execute_command(final_cmd_to_run, 180, False)
         else:
+ 
             execute_command(final_cmd_to_run, 120, False)
-            handle_coverage(args.src_files, args.res_out_dir, i)
 
     if args.win:
         print("log files has been saved in %s dir. Provide them to lighthouse to get code coverage evaluation" % args.res_out_dir)
     else:
-        generate_report(args.res_out_dir)
+        handle_coverage(args.src_files, args.res_out_dir, args.branch)
+        generate_report(args.res_out_dir, args.branch)
