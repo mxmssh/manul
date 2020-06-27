@@ -22,6 +22,7 @@ import subprocess
 import argparse
 import signal
 import hashlib
+import shutil
 
 GEN_TOTAL_FREQ = 100
 DEBUG = False
@@ -124,6 +125,10 @@ def is_folder_clean(res_out_dir):
         return False
     return True
 
+def safe_file_to_special_path(src_file, rel_path):
+    shutil.copy(src_file, rel_path)
+    return rel_path
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog = "evaluate_coverage.py",
                                      description = 'Script to obtain function level coverage from Manul or AFL output dir.',
@@ -135,10 +140,11 @@ if __name__ == "__main__":
     requiredNamed.add_argument("-fuzzing_out", required=True, dest="manul_out_dir", help = "Path to directory where Manul or AFL saved results")
     requiredNamed.add_argument("-out", required=True, dest="res_out_dir", help = "Path to directory where coverage results should be saved")
     requiredNamed.add_argument("-win", required=False, default = False, action = 'store_true', help = "Evaluate coverage from wiNAFL/manul on Windows")
+    requiredNamed.add_argument("-f", required=False, default = None, dest="rel_path", help = "Save file in specific location (similar to -f option for winAFL)")
     requiredNamed.add_argument("-branch", required=False, default = False, action = 'store_true', help = "Evaluate branch coverage on Linux")
     requiredNamed.add_argument('cmd_to_run', nargs='*', help="The target binary and options to be executed (quotes needed e.g. \"target -png @@\")")
     args = parser.parse_args()
- 
+    print(args)
     if args.win and not args.dynamorio_path:
         print("DynamoRIO path should be specified for Windows code coverage evaluation")
         sys.exit(0)
@@ -151,10 +157,14 @@ if __name__ == "__main__":
         print("Unable to enumerate files from queue in the directory provided. Please specify correct Manul or AFL dir")
         sys.exit(0)
     cmd_to_run = "".join(args.cmd_to_run)
-    clean_src_dir(args.src_files)
-
+    if not args.win:
+        clean_src_dir(args.src_files)
+    
     for i, file_to_execute in enumerate(files_to_run):
         print("%d out of %d" % (i, len(files_to_run)))
+        if args.rel_path:
+           print("saving file as %s" % args.rel_path)
+           file_to_execute = safe_file_to_special_path(file_to_execute, args.rel_path)
  
         final_cmd_to_run = cmd_to_run.replace("@@", file_to_execute)
         if args.win:
