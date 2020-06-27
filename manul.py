@@ -1387,11 +1387,12 @@ def parse_args():
     parser.add_argument("--disable_volatile_bytes", default = None, action = 'store_true', help = argparse.SUPPRESS)
     parser.add_argument("--stop_after_nseconds", default = 0.0, type=int, help = argparse.SUPPRESS)
     parser.add_argument("--forkserver_on", default = False, action = 'store_true', help = argparse.SUPPRESS)
-
+    parser.add_argument("--skip_binary_check", default = False, action = 'store_true', help = argparse.SUPPRESS)
 
     parser.add_argument('target_binary', nargs='*', help="The target binary and options to be executed (quotes needed e.g. \"target -png @@\")")
 
     args = parser.parse_args()
+
     additional_args = parse_config(args.config)
     # A little hack here. We actually adding commands from config to cmd string and then parse it all together.
     final_cmd_to_parse = "%s %s" % (" ".join(sys.argv[1:-1]), additional_args)
@@ -1449,9 +1450,10 @@ if __name__ == "__main__":
     if args.dbi is not None:
         dbi_setup = configure_dbi(args, target_binary, args.debug)
 
-    check_binary(target_binary)  # check if our binary exists and is actually instrumented
+    if not args.skip_binary_check:
+        check_binary(target_binary)  # check if our binary exists and is actually instrumented
 
-    if not args.simple_mode and args.dbi is None and not check_instrumentation(target_binary):
+    if not args.simple_mode and args.dbi is None and not args.skip_binary_check and not check_instrumentation(target_binary):
         ERROR("Failed to find afl's instrumentation in the target binary, try to recompile or run manul in dumb mode")
 
     if not os.path.isdir(args.input):
